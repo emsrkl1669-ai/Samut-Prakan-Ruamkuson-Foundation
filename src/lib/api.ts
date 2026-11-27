@@ -3,10 +3,10 @@ import type {
   AdminAppState,
   AdminRole,
   StaffMember,
-  DonationRecord,
 } from '../types';
 
 let authToken: string | null = null;
+let onUnauthorized: (() => void) | null = null;
 
 export function setAuthToken(token: string | null): void {
   authToken = token;
@@ -14,6 +14,10 @@ export function setAuthToken(token: string | null): void {
 
 export function getAuthToken(): string | null {
   return authToken;
+}
+
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  onUnauthorized = handler;
 }
 
 export interface AuthStatusResponse {
@@ -26,6 +30,16 @@ export interface AuthStatusResponse {
     fullName: string;
     role: AdminRole;
   } | null;
+}
+
+export class ApiError extends Error {
+  status: number;
+  requireTwoFactor?: boolean;
+  constructor(message: string, status: number, requireTwoFactor?: boolean) {
+    super(message);
+    this.status = status;
+    this.requireTwoFactor = requireTwoFactor;
+  }
 }
 
 export async function apiRequest<T>(
@@ -47,13 +61,19 @@ export async function apiRequest<T>(
 
   if (!res.ok) {
     let msg = `เกิดข้อผิดพลาด (${res.status})`;
+    let requireTwoFactor = false;
     try {
       const data = await res.json();
       if (data?.error) msg = data.error;
+      if (data?.requireTwoFactor) requireTwoFactor = true;
     } catch {
       // ignore json parse failure
     }
-    throw new Error(msg);
+    if (res.status === 401 && !url.startsWith('/api/auth/')) {
+      authToken = null;
+      onUnauthorized?.();
+    }
+    throw new ApiError(msg, res.status, requireTwoFactor);
   }
 
   return res.json() as Promise<T>;
@@ -167,73 +187,6 @@ export function exportStaffToExcelCsv(staff: StaffMember[]): void {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-}
-
-export function printDonationReceipt(donation: DonationRecord, foundationName: string, address: string, phone: string): void {
-  const win = window.open('', '_blank', 'width=820,height=680');
-  if (!win) return;
-
-  const esc = (s: string) =>
-    String(s || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-
-  win.document.write(`<!doctype html>
-<html lang="th">
-<head>
-<meta charset="utf-8" />
-<title>ใบรับเงินบริจาค ${esc(donation.receiptNo)}</title>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;600;700&display=swap" rel="stylesheet" />
-<style>
-  body { font-family: 'Noto Sans Thai', sans-serif; color: #0f172a; margin: 40px; line-height: 1.6; }
-  .box { border: 2px solid #0b1f3a; padding: 32px; max-width: 720px; margin: 0 auto; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #e2e8f0; padding-bottom: 16px; margin-bottom: 24px; }
-  .title { font-size: 20px; font-weight: 700; color: #0b1f3a; }
-  .sub { font-size: 13px; color: #475569; }
-  .receipt-no { text-align: right; font-size: 14px; }
-  .row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f1f5f9; }
-  .amount-box { background: #f8fafc; border: 1px solid #cbd5e1; padding: 16px; margin: 20px 0; display: flex; justify-content: space-between; align-items: center; }
-  .amount { font-size: 24px; font-weight: 700; color: #c81e1e; }
-  .footer { margin-top: 40px; display: flex; justify-content: space-between; font-size: 13px; color: #475569; }
-  .sign { text-align: center; width: 220px; border-top: 1px solid #94a3b8; padding-top: 8px; margin-top: 48px; }
-  @media print { button { display: none; } body { margin: 0; } }
-</style>
-</head>
-<body>
-  <div class="box">
-    <div class="header">
-      <div>
-        <div class="title">${esc(foundationName)}</div>
-        <div class="sub">${esc(address)}</div>
-        <div class="sub">โทรศัพท์ ${esc(phone)}</div>
-      </div>
-      <div class="receipt-no">
-        <div style="font-weight:700;color:#c81e1e;">ใบสำคัญรับเงินบริจาค</div>
-        <div>เลขที่: <strong>${esc(donation.receiptNo)}</strong></div>
-        <div>วันที่: ${esc(formatThaiDate(donation.donatedAt))}</div>
-      </div>
-    </div>
-    <div class="row"><span>ได้รับเงินบริจาคจาก</span><strong>${esc(donation.donorName)}</strong></div>
-    <div class="row"><span>วัตถุประสงค์การบริจาค</span><strong>${esc(donation.purpose)}</strong></div>
-    <div class="row"><span>ช่องทางการบริจาค</span><strong>${esc(donation.channel)}</strong></div>
-    <div class="row"><span>สถานะการตรวจสอบ</span><strong>${donation.status === 'verified' ? 'ตรวจสอบแล้ว' : 'รอตรวจสอบ'}</strong></div>
-    <div class="amount-box">
-      <span>จำนวนเงินบริจาคทั้งสิ้น</span>
-      <span class="amount">${formatCurrency(donation.amount)} บาท</span>
-    </div>
-    <div class="footer">
-      <div>ขออนุโมทนาบุญในจิตอันเป็นกุศลของท่าน</div>
-      <div class="sign">เจ้าหน้าที่การเงิน / ผู้รับเงิน</div>
-    </div>
-  </div>
-  <div style="text-align:center;margin-top:20px;">
-    <button onclick="window.print()" style="padding:10px 24px;background:#0b1f3a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;">พิมพ์ / บันทึกเป็น PDF</button>
-  </div>
-</body>
-</html>`);
-  win.document.close();
 }
 
 export const POSITION_PRESETS = [

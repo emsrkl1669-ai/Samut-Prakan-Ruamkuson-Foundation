@@ -22,7 +22,7 @@ import {
   Radio,
 } from 'lucide-react';
 import type { AdminAppState, AdminRole, AdminSectionId } from '../types';
-import { apiRequest, setAuthToken, type AuthStatusResponse } from '../lib/api';
+import { ApiError, apiRequest, setAuthToken, type AuthStatusResponse } from '../lib/api';
 import {
   AdminDashboardView,
   AdminSettingsView,
@@ -134,14 +134,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       });
       setAuthToken(res.token);
       setNeeds2FA(false);
+      setTotpCode('');
       setPassword('');
       await onAuthSuccess();
     } catch (err) {
-      const msg = (err as Error).message;
-      if (msg.includes('2 ขั้นตอน')) {
+      if (err instanceof ApiError && err.requireTwoFactor) {
         setNeeds2FA(true);
       }
-      setAuthError(msg);
+      setAuthError((err as Error).message);
     } finally {
       setAuthLoading(false);
     }
@@ -265,6 +265,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             </form>
           ) : showForgot ? (
             <form onSubmit={handleForgot} className="space-y-4">
+              {!authStatus?.hasEnvPasscode && (
+                <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 text-xs rounded-lg leading-relaxed">
+                  ยังไม่ได้ตั้งค่า <code className="font-mono">ADMIN_PASSCODE</code> บนเซิร์ฟเวอร์ กรุณาให้ผู้ดูแลระบบหลัก (Super Admin) รีเซ็ตรหัสผ่านให้ในเมนู &ldquo;บัญชีแอดมิน&rdquo;
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">อีเมลหรือชื่อผู้ใช้ *</label>
                 <input
@@ -282,9 +287,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 <input
                   type="password"
                   required
+                  disabled={!authStatus?.hasEnvPasscode}
                   value={recoveryPasscode}
                   onChange={(e) => setRecoveryPasscode(e.target.value)}
-                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm"
+                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm disabled:bg-slate-100"
                 />
               </div>
               <div>
@@ -295,15 +301,16 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   type="password"
                   required
                   minLength={8}
+                  disabled={!authStatus?.hasEnvPasscode}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm"
+                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm disabled:bg-slate-100"
                 />
               </div>
               <button
                 type="submit"
-                disabled={authLoading}
-                className="w-full py-3 bg-[#0B1F3A] hover:bg-[#122D52] text-white font-semibold rounded-lg text-sm cursor-pointer"
+                disabled={authLoading || !authStatus?.hasEnvPasscode}
+                className="w-full py-3 bg-[#0B1F3A] hover:bg-[#122D52] disabled:opacity-50 text-white font-semibold rounded-lg text-sm cursor-pointer"
               >
                 ยืนยันการตั้งรหัสผ่านใหม่
               </button>
@@ -387,9 +394,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const visibleMenu = MENU_ITEMS.filter(
     (item) => currentUser.role === 'Super Admin' || item.roles.includes(currentUser.role)
   );
+  const resolvedSection = visibleMenu.some((m) => m.id === activeSection)
+    ? activeSection
+    : (visibleMenu[0]?.id || 'dashboard');
 
   const renderSection = () => {
-    switch (activeSection) {
+    switch (resolvedSection) {
       case 'dashboard':
         return (
           <AdminDashboardView
@@ -454,7 +464,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
           {visibleMenu.map((item) => {
             const Icon = item.icon;
-            const active = activeSection === item.id;
+            const active = resolvedSection === item.id;
             return (
               <button
                 key={item.id}
@@ -513,7 +523,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               <Menu className="w-5 h-5" />
             </button>
             <h1 className="text-base sm:text-lg font-bold text-[#0B1F3A] truncate">
-              {MENU_ITEMS.find((m) => m.id === activeSection)?.label || 'ระบบหลังบ้าน'}
+              {MENU_ITEMS.find((m) => m.id === resolvedSection)?.label || 'ระบบหลังบ้าน'}
             </h1>
           </div>
 

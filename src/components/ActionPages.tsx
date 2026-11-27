@@ -19,6 +19,7 @@ import type {
   PublicAppState,
   DonationPurpose,
   DonationChannel,
+  DonationRecord,
   AdminSectionId,
 } from '../types';
 import {
@@ -26,10 +27,9 @@ import {
   uploadPublicFile,
   formatCurrency,
   formatThaiDate,
-  printDonationReceipt,
   isSafeUrl,
 } from '../lib/api';
-import { PageHeader, ImageWithFallback } from './SharedUI';
+import { PageHeader, ImageWithFallback, ReceiptModal } from './SharedUI';
 
 interface ActionPagesProps {
   state: PublicAppState;
@@ -72,6 +72,7 @@ export const DonationsPage: React.FC<ActionPagesProps> = ({
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [copiedAcc, setCopiedAcc] = useState(false);
+  const [receiptDonation, setReceiptDonation] = useState<DonationRecord | null>(null);
 
   const handleCopyBank = () => {
     navigator.clipboard?.writeText(settings.bankAccountNumber.replace(/-/g, ''));
@@ -91,6 +92,7 @@ export const DonationsPage: React.FC<ActionPagesProps> = ({
     } catch (err) {
       setFeedback({ type: 'err', text: (err as Error).message });
     } finally {
+      e.target.value = '';
       setUploading(false);
     }
   };
@@ -196,7 +198,7 @@ export const DonationsPage: React.FC<ActionPagesProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div className="bg-white border border-slate-200 rounded-xl p-5 text-center space-y-3">
-                <div className="aspect-3/4 w-full bg-slate-50 rounded-lg overflow-hidden border border-slate-100">
+                <div className="aspect-[3/4] w-full bg-slate-50 rounded-lg overflow-hidden border border-slate-100">
                   <ImageWithFallback
                     src={settings.qrEdonationUrl}
                     alt="QR e-Donation มูลนิธิร่วมกุศลสมุทรปราการ"
@@ -210,7 +212,7 @@ export const DonationsPage: React.FC<ActionPagesProps> = ({
               </div>
 
               <div className="bg-white border border-slate-200 rounded-xl p-5 text-center space-y-3">
-                <div className="aspect-3/4 w-full bg-slate-50 rounded-lg overflow-hidden border border-slate-100">
+                <div className="aspect-[3/4] w-full bg-slate-50 rounded-lg overflow-hidden border border-slate-100">
                   <ImageWithFallback
                     src={settings.qrPromptpayUrl}
                     alt="QR PromptPay กสิกรไทย"
@@ -407,14 +409,7 @@ export const DonationsPage: React.FC<ActionPagesProps> = ({
                       <td className="px-6 py-3.5 text-right">
                         <button
                           type="button"
-                          onClick={() =>
-                            printDonationReceipt(
-                              d,
-                              settings.foundationName,
-                              settings.address,
-                              settings.emergencyPhone
-                            )
-                          }
+                          onClick={() => setReceiptDonation(d)}
                           className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-[#0B1F3A] bg-slate-100 hover:bg-slate-200 rounded-md cursor-pointer"
                         >
                           <Printer className="w-3.5 h-3.5" />
@@ -429,6 +424,12 @@ export const DonationsPage: React.FC<ActionPagesProps> = ({
           )}
         </div>
       </section>
+
+      <ReceiptModal
+        donation={receiptDonation}
+        settings={settings}
+        onClose={() => setReceiptDonation(null)}
+      />
     </div>
   );
 };
@@ -465,6 +466,7 @@ export const VolunteerPage: React.FC<ActionPagesProps> = ({
     } catch (err) {
       setFeedback({ type: 'err', text: (err as Error).message });
     } finally {
+      e.target.value = '';
       setUploading(false);
     }
   };
@@ -832,7 +834,10 @@ export const ContactPage: React.FC<ActionPagesProps> = ({
             <div className="flex items-center gap-2 p-1 bg-slate-100 rounded-lg mb-6">
               <button
                 type="button"
-                onClick={() => setFormType('contact')}
+                onClick={() => {
+                  setFormType('contact');
+                  setFeedback(null);
+                }}
                 className={`flex-1 py-2.5 text-sm font-semibold rounded-md transition-colors cursor-pointer ${
                   formType === 'contact' ? 'bg-white text-[#0B1F3A] shadow-xs' : 'text-slate-600'
                 }`}
@@ -841,7 +846,10 @@ export const ContactPage: React.FC<ActionPagesProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => setFormType('emergency')}
+                onClick={() => {
+                  setFormType('emergency');
+                  setFeedback(null);
+                }}
                 className={`flex-1 py-2.5 text-sm font-semibold rounded-md transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5 ${
                   formType === 'emergency' ? 'bg-[#C81E1E] text-white shadow-xs' : 'text-slate-600'
                 }`}

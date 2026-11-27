@@ -290,7 +290,7 @@ export const PublicHome: React.FC<PublicHomeProps> = ({
               onClick={() => go('activities')}
               className="group bg-white border border-slate-200 rounded-xl overflow-hidden hover:border-slate-300 hover:shadow-md transition-all cursor-pointer flex flex-col"
             >
-              <div className="aspect-4/3 w-full overflow-hidden bg-slate-100">
+              <div className="aspect-[4/3] w-full overflow-hidden bg-slate-100">
                 <ImageWithFallback
                   src={act.galleryUrls[0]}
                   alt={act.title}
@@ -400,7 +400,7 @@ export const PublicHome: React.FC<PublicHomeProps> = ({
 
           <div className="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 gap-5">
             <div className="bg-white border border-slate-200 rounded-xl p-4 text-center space-y-3">
-              <div className="aspect-3/4 w-full overflow-hidden rounded-lg bg-slate-50 border border-slate-100">
+              <div className="aspect-[3/4] w-full overflow-hidden rounded-lg bg-slate-50 border border-slate-100">
                 <ImageWithFallback
                   src={settings.qrEdonationUrl}
                   alt="QR Code e-Donation มูลนิธิร่วมกุศลสมุทรปราการ"
@@ -414,7 +414,7 @@ export const PublicHome: React.FC<PublicHomeProps> = ({
             </div>
 
             <div className="bg-white border border-slate-200 rounded-xl p-4 text-center space-y-3">
-              <div className="aspect-3/4 w-full overflow-hidden rounded-lg bg-slate-50 border border-slate-100">
+              <div className="aspect-[3/4] w-full overflow-hidden rounded-lg bg-slate-50 border border-slate-100">
                 <ImageWithFallback
                   src={settings.qrPromptpayUrl}
                   alt="QR PromptPay กสิกรไทย มูลนิธิร่วมกุศลสมุทรปราการ"

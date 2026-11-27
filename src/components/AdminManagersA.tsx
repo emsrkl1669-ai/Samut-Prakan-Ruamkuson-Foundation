@@ -45,6 +45,7 @@ export const AdminDashboardView: React.FC<{
   const [stats, setStats] = useState<MonthlyStat[]>(state.monthlyStats);
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState('');
+  const [errMsg, setErrMsg] = useState('');
 
   useEffect(() => {
     setStats(state.monthlyStats);
@@ -73,6 +74,7 @@ export const AdminDashboardView: React.FC<{
   const handleSaveStats = async () => {
     setSaving(true);
     setSavedMsg('');
+    setErrMsg('');
     try {
       await apiRequest('/api/admin/monthly-stats', {
         method: 'PUT',
@@ -81,6 +83,8 @@ export const AdminDashboardView: React.FC<{
       await onRefresh();
       setSavedMsg('บันทึกสถิติรายเดือนเรียบร้อยแล้ว (ซิงค์ทุกเครื่องทันที)');
       setTimeout(() => setSavedMsg(''), 3000);
+    } catch (err) {
+      setErrMsg((err as Error).message);
     } finally {
       setSaving(false);
     }
@@ -140,12 +144,13 @@ export const AdminDashboardView: React.FC<{
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {errMsg && <span className="text-xs font-semibold text-red-700">{errMsg}</span>}
             {savedMsg && <span className="text-xs font-semibold text-emerald-700">{savedMsg}</span>}
             <button
               type="button"
               onClick={handleSaveStats}
               disabled={saving}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-[#0B1F3A] hover:bg-[#122D52] text-white text-sm font-semibold rounded-lg cursor-pointer"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-[#0B1F3A] hover:bg-[#122D52] disabled:opacity-50 text-white text-sm font-semibold rounded-lg cursor-pointer"
             >
               <Save className="w-4 h-4" />
               <span>{saving ? 'กำลังบันทึก...' : 'บันทึกสถิติรายเดือน'}</span>
@@ -255,6 +260,7 @@ export const AdminSettingsView: React.FC<{
   const [form, setForm] = useState<SiteSettings>(state.settings);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
+  const [errMsg, setErrMsg] = useState('');
 
   useEffect(() => {
     setForm(state.settings);
@@ -266,14 +272,22 @@ export const AdminSettingsView: React.FC<{
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const res = await uploadAdminFile(file);
-    setForm((prev) => ({ ...prev, [field]: res.url }));
+    setErrMsg('');
+    try {
+      const res = await uploadAdminFile(file);
+      setForm((prev) => ({ ...prev, [field]: res.url }));
+    } catch (err) {
+      setErrMsg((err as Error).message);
+    } finally {
+      e.target.value = '';
+    }
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setMsg('');
+    setErrMsg('');
     try {
       await apiRequest('/api/admin/settings', {
         method: 'PUT',
@@ -282,7 +296,7 @@ export const AdminSettingsView: React.FC<{
       await onRefresh();
       setMsg('บันทึกการตั้งค่าเว็บไซต์และข้อมูลองค์กรเรียบร้อยแล้ว');
     } catch (err) {
-      setMsg((err as Error).message);
+      setErrMsg((err as Error).message);
     } finally {
       setSaving(false);
     }
@@ -307,6 +321,11 @@ export const AdminSettingsView: React.FC<{
         </button>
       </div>
 
+      {errMsg && (
+        <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-900 text-sm font-medium">
+          {errMsg}
+        </div>
+      )}
       {msg && (
         <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-sm font-medium">
           {msg}
@@ -556,6 +575,35 @@ export const AdminSettingsView: React.FC<{
             />
           </div>
         </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">ลิงก์ Facebook</label>
+            <input
+              type="url"
+              value={form.facebookUrl}
+              onChange={(e) => setForm({ ...form, facebookUrl: e.target.value })}
+              className="w-full px-3.5 py-2 border border-slate-300 rounded-lg text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">ลิงก์ Line Official</label>
+            <input
+              type="url"
+              value={form.lineUrl}
+              onChange={(e) => setForm({ ...form, lineUrl: e.target.value })}
+              className="w-full px-3.5 py-2 border border-slate-300 rounded-lg text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">เว็บไซต์เพิ่มเติม</label>
+            <input
+              type="url"
+              value={form.websiteUrl}
+              onChange={(e) => setForm({ ...form, websiteUrl: e.target.value })}
+              className="w-full px-3.5 py-2 border border-slate-300 rounded-lg text-sm"
+            />
+          </div>
+        </div>
       </div>
 
       {/* Donation Settings */}
@@ -684,6 +732,9 @@ export const AdminExecutivesView: React.FC<{
 }> = ({ state, onRefresh }) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Executive | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [errMsg, setErrMsg] = useState('');
   const [form, setForm] = useState({
     name: '',
     roleTier: 'manager' as ExecutiveTier,
@@ -696,6 +747,7 @@ export const AdminExecutivesView: React.FC<{
 
   const openNew = () => {
     setEditing(null);
+    setErrMsg('');
     setForm({
       name: '',
       roleTier: 'president',
@@ -710,6 +762,7 @@ export const AdminExecutivesView: React.FC<{
 
   const openEdit = (ex: Executive) => {
     setEditing(ex);
+    setErrMsg('');
     setForm({
       name: ex.name,
       roleTier: ex.roleTier,
@@ -724,24 +777,37 @@ export const AdminExecutivesView: React.FC<{
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editing) {
-      await apiRequest(`/api/admin/executives/${editing.id}`, {
-        method: 'PUT',
-        body: JSON.stringify(form),
-      });
-    } else {
-      await apiRequest('/api/admin/executives', {
-        method: 'POST',
-        body: JSON.stringify(form),
-      });
+    setSaving(true);
+    setErrMsg('');
+    try {
+      if (editing) {
+        await apiRequest(`/api/admin/executives/${editing.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(form),
+        });
+      } else {
+        await apiRequest('/api/admin/executives', {
+          method: 'POST',
+          body: JSON.stringify(form),
+        });
+      }
+      setModalOpen(false);
+      await onRefresh();
+    } catch (err) {
+      setErrMsg((err as Error).message);
+    } finally {
+      setSaving(false);
     }
-    setModalOpen(false);
-    await onRefresh();
   };
 
   const handleDelete = async (id: string) => {
-    await apiRequest(`/api/admin/executives/${id}`, { method: 'DELETE' });
-    await onRefresh();
+    setErrMsg('');
+    try {
+      await apiRequest(`/api/admin/executives/${id}`, { method: 'DELETE' });
+      await onRefresh();
+    } catch (err) {
+      setErrMsg((err as Error).message);
+    }
   };
 
   return (
@@ -762,6 +828,12 @@ export const AdminExecutivesView: React.FC<{
           <span>เพิ่มคณะผู้บริหาร</span>
         </button>
       </div>
+
+      {errMsg && !modalOpen && (
+        <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-900 text-sm font-medium">
+          {errMsg}
+        </div>
+      )}
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
@@ -828,6 +900,11 @@ export const AdminExecutivesView: React.FC<{
         title={editing ? 'แก้ไขข้อมูลผู้บริหาร' : 'เพิ่มข้อมูลผู้บริหาร'}
       >
         <form onSubmit={handleSave} className="space-y-4">
+          {errMsg && (
+            <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-900 text-xs font-medium">
+              {errMsg}
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">ระดับในผังองค์กร</label>
@@ -908,15 +985,24 @@ export const AdminExecutivesView: React.FC<{
             />
             <label className="inline-flex items-center gap-2 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-xs font-semibold rounded-lg cursor-pointer">
               <Upload className="w-3.5 h-3.5" />
-              <span>อัปโหลดรูปภาพ</span>
+              <span>{uploading ? 'กำลังอัปโหลด...' : 'อัปโหลดรูปภาพ'}</span>
               <input
                 type="file"
                 accept=".jpg,.jpeg,.png,.webp"
                 onChange={async (e) => {
                   const f = e.target.files?.[0];
                   if (!f) return;
-                  const r = await uploadAdminFile(f);
-                  setForm({ ...form, photoUrl: r.url });
+                  setUploading(true);
+                  setErrMsg('');
+                  try {
+                    const r = await uploadAdminFile(f);
+                    setForm((prev) => ({ ...prev, photoUrl: r.url }));
+                  } catch (err) {
+                    setErrMsg((err as Error).message);
+                  } finally {
+                    e.target.value = '';
+                    setUploading(false);
+                  }
                 }}
                 className="hidden"
               />
@@ -933,9 +1019,10 @@ export const AdminExecutivesView: React.FC<{
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-[#0B1F3A] text-white text-sm font-semibold rounded-lg cursor-pointer"
+              disabled={saving || uploading}
+              className="px-5 py-2 bg-[#0B1F3A] text-white text-sm font-semibold rounded-lg cursor-pointer disabled:opacity-50"
             >
-              บันทึกข้อมูล
+              {saving ? 'กำลังบันทึก...' : 'บันทึกข้อมูล'}
             </button>
           </div>
         </form>
@@ -962,6 +1049,9 @@ export const AdminStaffView: React.FC<{
 }> = ({ state, onRefresh }) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<StaffMember | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [errMsg, setErrMsg] = useState('');
   const [form, setForm] = useState({
     employeeCode: '',
     name: '',
@@ -976,6 +1066,7 @@ export const AdminStaffView: React.FC<{
 
   const openNew = () => {
     setEditing(null);
+    setErrMsg('');
     setForm({
       employeeCode: `RKL-${String(state.staff.length + 1).padStart(3, '0')}`,
       name: '',
@@ -992,6 +1083,7 @@ export const AdminStaffView: React.FC<{
 
   const openEdit = (s: StaffMember) => {
     setEditing(s);
+    setErrMsg('');
     setForm({
       employeeCode: s.employeeCode,
       name: s.name,
@@ -1008,24 +1100,37 @@ export const AdminStaffView: React.FC<{
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editing) {
-      await apiRequest(`/api/admin/staff/${editing.id}`, {
-        method: 'PUT',
-        body: JSON.stringify(form),
-      });
-    } else {
-      await apiRequest('/api/admin/staff', {
-        method: 'POST',
-        body: JSON.stringify(form),
-      });
+    setSaving(true);
+    setErrMsg('');
+    try {
+      if (editing) {
+        await apiRequest(`/api/admin/staff/${editing.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(form),
+        });
+      } else {
+        await apiRequest('/api/admin/staff', {
+          method: 'POST',
+          body: JSON.stringify(form),
+        });
+      }
+      setModalOpen(false);
+      await onRefresh();
+    } catch (err) {
+      setErrMsg((err as Error).message);
+    } finally {
+      setSaving(false);
     }
-    setModalOpen(false);
-    await onRefresh();
   };
 
   const handleDelete = async (id: string) => {
-    await apiRequest(`/api/admin/staff/${id}`, { method: 'DELETE' });
-    await onRefresh();
+    setErrMsg('');
+    try {
+      await apiRequest(`/api/admin/staff/${id}`, { method: 'DELETE' });
+      await onRefresh();
+    } catch (err) {
+      setErrMsg((err as Error).message);
+    }
   };
 
   return (
@@ -1064,6 +1169,12 @@ export const AdminStaffView: React.FC<{
           </button>
         </div>
       </div>
+
+      {errMsg && !modalOpen && (
+        <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-900 text-sm font-medium">
+          {errMsg}
+        </div>
+      )}
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
@@ -1120,6 +1231,11 @@ export const AdminStaffView: React.FC<{
         title={editing ? 'แก้ไขข้อมูลพนักงาน' : 'เพิ่มข้อมูลพนักงาน'}
       >
         <form onSubmit={handleSave} className="space-y-4">
+          {errMsg && (
+            <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-900 text-xs font-medium">
+              {errMsg}
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">รหัสพนักงาน</label>
@@ -1197,6 +1313,27 @@ export const AdminStaffView: React.FC<{
             </div>
           </div>
 
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">สิทธิ์ / บทบาท (เช่น Admin, Main Admin)</label>
+              <input
+                type="text"
+                value={form.systemRole}
+                onChange={(e) => setForm({ ...form, systemRole: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">ลำดับแสดงผล</label>
+              <input
+                type="number"
+                value={form.sortOrder}
+                onChange={(e) => setForm({ ...form, sortOrder: Number(e.target.value) || 1 })}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm tabular-nums"
+              />
+            </div>
+          </div>
+
           <div className="flex items-center gap-4">
             <ImageWithFallback
               src={form.photoUrl}
@@ -1205,15 +1342,24 @@ export const AdminStaffView: React.FC<{
             />
             <label className="inline-flex items-center gap-2 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-xs font-semibold rounded-lg cursor-pointer">
               <Upload className="w-3.5 h-3.5" />
-              <span>อัปโหลดรูปภาพ</span>
+              <span>{uploading ? 'กำลังอัปโหลด...' : 'อัปโหลดรูปภาพ'}</span>
               <input
                 type="file"
                 accept=".jpg,.jpeg,.png,.webp"
                 onChange={async (e) => {
                   const f = e.target.files?.[0];
                   if (!f) return;
-                  const r = await uploadAdminFile(f);
-                  setForm({ ...form, photoUrl: r.url });
+                  setUploading(true);
+                  setErrMsg('');
+                  try {
+                    const r = await uploadAdminFile(f);
+                    setForm((prev) => ({ ...prev, photoUrl: r.url }));
+                  } catch (err) {
+                    setErrMsg((err as Error).message);
+                  } finally {
+                    e.target.value = '';
+                    setUploading(false);
+                  }
                 }}
                 className="hidden"
               />
@@ -1230,9 +1376,10 @@ export const AdminStaffView: React.FC<{
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-[#0B1F3A] text-white text-sm font-semibold rounded-lg cursor-pointer"
+              disabled={saving || uploading}
+              className="px-5 py-2 bg-[#0B1F3A] text-white text-sm font-semibold rounded-lg cursor-pointer disabled:opacity-50"
             >
-              บันทึกพนักงาน
+              {saving ? 'กำลังบันทึก...' : 'บันทึกพนักงาน'}
             </button>
           </div>
         </form>
@@ -1261,6 +1408,9 @@ export const AdminRescueView: React.FC<{
 }> = ({ state, onRefresh }) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<RescuePersonnel | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [errMsg, setErrMsg] = useState('');
   const [form, setForm] = useState({
     officerCode: '',
     name: '',
@@ -1277,6 +1427,7 @@ export const AdminRescueView: React.FC<{
 
   const openNew = () => {
     setEditing(null);
+    setErrMsg('');
     setForm({
       officerCode: `EMT-${String(state.rescuePersonnel.length + 1).padStart(3, '0')}`,
       name: '',
@@ -1295,6 +1446,7 @@ export const AdminRescueView: React.FC<{
 
   const openEdit = (r: RescuePersonnel) => {
     setEditing(r);
+    setErrMsg('');
     setForm({
       officerCode: r.officerCode,
       name: r.name,
@@ -1313,24 +1465,37 @@ export const AdminRescueView: React.FC<{
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editing) {
-      await apiRequest(`/api/admin/rescue/${editing.id}`, {
-        method: 'PUT',
-        body: JSON.stringify(form),
-      });
-    } else {
-      await apiRequest('/api/admin/rescue', {
-        method: 'POST',
-        body: JSON.stringify(form),
-      });
+    setSaving(true);
+    setErrMsg('');
+    try {
+      if (editing) {
+        await apiRequest(`/api/admin/rescue/${editing.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(form),
+        });
+      } else {
+        await apiRequest('/api/admin/rescue', {
+          method: 'POST',
+          body: JSON.stringify(form),
+        });
+      }
+      setModalOpen(false);
+      await onRefresh();
+    } catch (err) {
+      setErrMsg((err as Error).message);
+    } finally {
+      setSaving(false);
     }
-    setModalOpen(false);
-    await onRefresh();
   };
 
   const handleDelete = async (id: string) => {
-    await apiRequest(`/api/admin/rescue/${id}`, { method: 'DELETE' });
-    await onRefresh();
+    setErrMsg('');
+    try {
+      await apiRequest(`/api/admin/rescue/${id}`, { method: 'DELETE' });
+      await onRefresh();
+    } catch (err) {
+      setErrMsg((err as Error).message);
+    }
   };
 
   return (
@@ -1351,6 +1516,12 @@ export const AdminRescueView: React.FC<{
           <span>เพิ่มเจ้าหน้าที่กู้ชีพ</span>
         </button>
       </div>
+
+      {errMsg && !modalOpen && (
+        <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-900 text-sm font-medium">
+          {errMsg}
+        </div>
+      )}
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
@@ -1413,6 +1584,11 @@ export const AdminRescueView: React.FC<{
         title={editing ? 'แก้ไขข้อมูลเจ้าหน้าที่กู้ชีพ' : 'เพิ่มเจ้าหน้าที่กู้ชีพ'}
       >
         <form onSubmit={handleSave} className="space-y-4">
+          {errMsg && (
+            <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-900 text-xs font-medium">
+              {errMsg}
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">ชุดปฏิบัติการ</label>
@@ -1519,15 +1695,24 @@ export const AdminRescueView: React.FC<{
               />
               <label className="inline-flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-xs font-semibold rounded-lg cursor-pointer">
                 <Upload className="w-3.5 h-3.5" />
-                <span>อัปโหลดรูป</span>
+                <span>{uploading ? 'กำลังอัปโหลด...' : 'อัปโหลดรูป'}</span>
                 <input
                   type="file"
                   accept=".jpg,.jpeg,.png,.webp"
                   onChange={async (e) => {
                     const f = e.target.files?.[0];
                     if (!f) return;
-                    const r = await uploadAdminFile(f);
-                    setForm({ ...form, photoUrl: r.url });
+                    setUploading(true);
+                    setErrMsg('');
+                    try {
+                      const r = await uploadAdminFile(f);
+                      setForm((prev) => ({ ...prev, photoUrl: r.url }));
+                    } catch (err) {
+                      setErrMsg((err as Error).message);
+                    } finally {
+                      e.target.value = '';
+                      setUploading(false);
+                    }
                   }}
                   className="hidden"
                 />
@@ -1545,9 +1730,10 @@ export const AdminRescueView: React.FC<{
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-[#0B1F3A] text-white text-sm font-semibold rounded-lg cursor-pointer"
+              disabled={saving || uploading}
+              className="px-5 py-2 bg-[#0B1F3A] text-white text-sm font-semibold rounded-lg cursor-pointer disabled:opacity-50"
             >
-              บันทึกข้อมูล
+              {saving ? 'กำลังบันทึก...' : 'บันทึกข้อมูล'}
             </button>
           </div>
         </form>

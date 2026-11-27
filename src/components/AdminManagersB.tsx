@@ -33,10 +33,9 @@ import {
   uploadAdminMultipleFiles,
   formatCurrency,
   formatThaiDate,
-  printDonationReceipt,
   isSafeUrl,
 } from '../lib/api';
-import { ImageWithFallback, Modal } from './SharedUI';
+import { ImageWithFallback, Modal, ReceiptModal } from './SharedUI';
 
 /* =========================================================
  * 1. NEWS CRUD MANAGER
@@ -47,6 +46,9 @@ export const AdminNewsView: React.FC<{
 }> = ({ state, onRefresh }) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<NewsItem | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [errMsg, setErrMsg] = useState('');
   const [form, setForm] = useState({
     title: '',
     summary: '',
@@ -61,6 +63,7 @@ export const AdminNewsView: React.FC<{
 
   const openNew = () => {
     setEditing(null);
+    setErrMsg('');
     setForm({
       title: '',
       summary: '',
@@ -77,6 +80,7 @@ export const AdminNewsView: React.FC<{
 
   const openEdit = (n: NewsItem) => {
     setEditing(n);
+    setErrMsg('');
     setForm({
       title: n.title,
       summary: n.summary,
@@ -93,36 +97,59 @@ export const AdminNewsView: React.FC<{
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editing) {
-      await apiRequest(`/api/admin/news/${editing.id}`, {
-        method: 'PUT',
-        body: JSON.stringify(form),
-      });
-    } else {
-      await apiRequest('/api/admin/news', {
-        method: 'POST',
-        body: JSON.stringify(form),
-      });
+    setSaving(true);
+    setErrMsg('');
+    try {
+      if (editing) {
+        await apiRequest(`/api/admin/news/${editing.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(form),
+        });
+      } else {
+        await apiRequest('/api/admin/news', {
+          method: 'POST',
+          body: JSON.stringify(form),
+        });
+      }
+      setModalOpen(false);
+      await onRefresh();
+    } catch (err) {
+      setErrMsg((err as Error).message);
+    } finally {
+      setSaving(false);
     }
-    setModalOpen(false);
-    await onRefresh();
   };
 
   const toggleField = async (n: NewsItem, field: 'isPublished' | 'isApproved') => {
-    await apiRequest(`/api/admin/news/${n.id}`, {
-      method: 'PUT',
-      body: JSON.stringify({ [field]: !n[field] }),
-    });
-    await onRefresh();
+    setErrMsg('');
+    try {
+      await apiRequest(`/api/admin/news/${n.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ [field]: !n[field] }),
+      });
+      await onRefresh();
+    } catch (err) {
+      setErrMsg((err as Error).message);
+    }
   };
 
   const handleDelete = async (id: string) => {
-    await apiRequest(`/api/admin/news/${id}`, { method: 'DELETE' });
-    await onRefresh();
+    setErrMsg('');
+    try {
+      await apiRequest(`/api/admin/news/${id}`, { method: 'DELETE' });
+      await onRefresh();
+    } catch (err) {
+      setErrMsg((err as Error).message);
+    }
   };
 
   return (
     <div className="space-y-6">
+      {errMsg && !modalOpen && (
+        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl text-sm">
+          {errMsg}
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-4 bg-white border border-slate-200 rounded-xl p-5">
         <div>
           <h2 className="text-lg font-bold text-[#0B1F3A]">จัดการข่าวประชาสัมพันธ์ ({state.news.length} ข่าว)</h2>
@@ -222,6 +249,11 @@ export const AdminNewsView: React.FC<{
         maxWidthClass="max-w-3xl"
       >
         <form onSubmit={handleSave} className="space-y-4">
+          {errMsg && (
+            <div className="bg-red-50 border border-red-200 text-red-800 px-3 py-2 rounded-lg text-xs">
+              {errMsg}
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="sm:col-span-2">
               <label className="block text-xs font-semibold text-slate-700 mb-1">หัวข้อข่าว *</label>
@@ -275,15 +307,26 @@ export const AdminNewsView: React.FC<{
                 />
                 <label className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-xs font-semibold rounded-lg cursor-pointer">
                   <Upload className="w-3.5 h-3.5" />
-                  <span>อัปโหลดภาพปก</span>
+                  <span>{uploading ? 'กำลังอัปโหลด...' : 'อัปโหลดภาพปก'}</span>
                   <input
                     type="file"
                     accept=".jpg,.jpeg,.png,.webp"
+                    disabled={uploading}
                     onChange={async (e) => {
-                      const f = e.target.files?.[0];
+                      const input = e.target;
+                      const f = input.files?.[0];
                       if (!f) return;
-                      const r = await uploadAdminFile(f);
-                      setForm({ ...form, coverImageUrl: r.url });
+                      setUploading(true);
+                      setErrMsg('');
+                      try {
+                        const r = await uploadAdminFile(f);
+                        setForm((prev) => ({ ...prev, coverImageUrl: r.url }));
+                      } catch (err) {
+                        setErrMsg((err as Error).message);
+                      } finally {
+                        setUploading(false);
+                        input.value = '';
+                      }
                     }}
                     className="hidden"
                   />
@@ -293,48 +336,107 @@ export const AdminNewsView: React.FC<{
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">แนบไฟล์เอกสาร PDF</label>
-              <label className="inline-flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-xs font-semibold rounded-lg cursor-pointer">
-                <FileText className="w-3.5 h-3.5" />
-                <span>{form.pdfUrl ? 'เปลี่ยนไฟล์ PDF' : 'อัปโหลดไฟล์ PDF'}</span>
-                <input
-                  type="file"
-                  accept=".pdf"
-                  onChange={async (e) => {
-                    const f = e.target.files?.[0];
-                    if (!f) return;
-                    const r = await uploadAdminFile(f);
-                    setForm({ ...form, pdfUrl: r.url });
-                  }}
-                  className="hidden"
-                />
-              </label>
+              <div className="flex items-center gap-2">
+                <label className="inline-flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-xs font-semibold rounded-lg cursor-pointer">
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>{uploading ? 'กำลังอัปโหลด...' : form.pdfUrl ? 'เปลี่ยนไฟล์ PDF' : 'อัปโหลดไฟล์ PDF'}</span>
+                  <input
+                    type="file"
+                    accept=".pdf"
+                    disabled={uploading}
+                    onChange={async (e) => {
+                      const input = e.target;
+                      const f = input.files?.[0];
+                      if (!f) return;
+                      setUploading(true);
+                      setErrMsg('');
+                      try {
+                        const r = await uploadAdminFile(f);
+                        setForm((prev) => ({ ...prev, pdfUrl: r.url }));
+                      } catch (err) {
+                        setErrMsg((err as Error).message);
+                      } finally {
+                        setUploading(false);
+                        input.value = '';
+                      }
+                    }}
+                    className="hidden"
+                  />
+                </label>
+                {form.pdfUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setForm((prev) => ({ ...prev, pdfUrl: '' }))}
+                    className="text-xs text-red-600 hover:underline cursor-pointer"
+                  >
+                    ลบ PDF
+                  </button>
+                )}
+              </div>
               {form.pdfUrl && <p className="text-xs text-emerald-700 mt-1 truncate">{form.pdfUrl}</p>}
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
+          <div className="space-y-2">
+            <label className="block text-xs font-semibold text-slate-700">
               รูปภาพประกอบเพิ่มเติม ({form.galleryUrls.length} รูป)
             </label>
             <label className="inline-flex items-center gap-2 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-xs font-semibold rounded-lg cursor-pointer">
               <ImagePlus className="w-3.5 h-3.5" />
-              <span>อัปโหลดหลายรูปภาพ</span>
+              <span>{uploading ? 'กำลังอัปโหลด...' : 'อัปโหลดหลายรูปภาพ'}</span>
               <input
                 type="file"
                 multiple
                 accept=".jpg,.jpeg,.png,.webp"
+                disabled={uploading}
                 onChange={async (e) => {
-                  const files = Array.from(e.target.files || []);
+                  const input = e.target;
+                  const files = Array.from(input.files || []);
                   if (!files.length) return;
-                  const res = await uploadAdminMultipleFiles(files);
-                  setForm((prev) => ({
-                    ...prev,
-                    galleryUrls: [...prev.galleryUrls, ...res.files.map((x) => x.url)],
-                  }));
+                  setUploading(true);
+                  setErrMsg('');
+                  try {
+                    const res = await uploadAdminMultipleFiles(files);
+                    setForm((prev) => ({
+                      ...prev,
+                      galleryUrls: [...prev.galleryUrls, ...res.files.map((x) => x.url)],
+                    }));
+                  } catch (err) {
+                    setErrMsg((err as Error).message);
+                  } finally {
+                    setUploading(false);
+                    input.value = '';
+                  }
                 }}
                 className="hidden"
               />
             </label>
+            {form.galleryUrls.length > 0 && (
+              <div className="grid grid-cols-4 gap-2 pt-2">
+                {form.galleryUrls.map((url, idx) => (
+                  <div key={`${url}-${idx}`} className="relative group">
+                    <ImageWithFallback
+                      src={url}
+                      alt=""
+                      className="w-full h-16 object-cover rounded border border-slate-200"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setForm((prev) => ({
+                          ...prev,
+                          galleryUrls: prev.galleryUrls.filter((_, i) => i !== idx),
+                        }))
+                      }
+                      aria-label="ลบรูปภาพ"
+                      className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold cursor-pointer"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-6 pt-1 text-sm">
@@ -366,9 +468,10 @@ export const AdminNewsView: React.FC<{
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-[#0B1F3A] text-white text-sm font-semibold rounded-lg cursor-pointer"
+              disabled={saving || uploading}
+              className="px-5 py-2 bg-[#0B1F3A] disabled:opacity-50 text-white text-sm font-semibold rounded-lg cursor-pointer"
             >
-              บันทึกข่าว
+              {saving ? 'กำลังบันทึก...' : 'บันทึกข่าว'}
             </button>
           </div>
         </form>
@@ -397,6 +500,9 @@ export const AdminActivitiesView: React.FC<{
 }> = ({ state, onRefresh }) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ActivityItem | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [errMsg, setErrMsg] = useState('');
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -410,6 +516,7 @@ export const AdminActivitiesView: React.FC<{
 
   const openNew = () => {
     setEditing(null);
+    setErrMsg('');
     setForm({
       title: '',
       description: '',
@@ -425,6 +532,7 @@ export const AdminActivitiesView: React.FC<{
 
   const openEdit = (a: ActivityItem) => {
     setEditing(a);
+    setErrMsg('');
     setForm({
       title: a.title,
       description: a.description,
@@ -440,28 +548,46 @@ export const AdminActivitiesView: React.FC<{
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editing) {
-      await apiRequest(`/api/admin/activities/${editing.id}`, {
-        method: 'PUT',
-        body: JSON.stringify(form),
-      });
-    } else {
-      await apiRequest('/api/admin/activities', {
-        method: 'POST',
-        body: JSON.stringify(form),
-      });
+    setSaving(true);
+    setErrMsg('');
+    try {
+      if (editing) {
+        await apiRequest(`/api/admin/activities/${editing.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(form),
+        });
+      } else {
+        await apiRequest('/api/admin/activities', {
+          method: 'POST',
+          body: JSON.stringify(form),
+        });
+      }
+      setModalOpen(false);
+      await onRefresh();
+    } catch (err) {
+      setErrMsg((err as Error).message);
+    } finally {
+      setSaving(false);
     }
-    setModalOpen(false);
-    await onRefresh();
   };
 
   const handleDelete = async (id: string) => {
-    await apiRequest(`/api/admin/activities/${id}`, { method: 'DELETE' });
-    await onRefresh();
+    setErrMsg('');
+    try {
+      await apiRequest(`/api/admin/activities/${id}`, { method: 'DELETE' });
+      await onRefresh();
+    } catch (err) {
+      setErrMsg((err as Error).message);
+    }
   };
 
   return (
     <div className="space-y-6">
+      {errMsg && !modalOpen && (
+        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl text-sm">
+          {errMsg}
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-4 bg-white border border-slate-200 rounded-xl p-5">
         <div>
           <h2 className="text-lg font-bold text-[#0B1F3A]">จัดการกิจกรรมมูลนิธิ ({state.activities.length} กิจกรรม)</h2>
@@ -524,6 +650,11 @@ export const AdminActivitiesView: React.FC<{
         maxWidthClass="max-w-3xl"
       >
         <form onSubmit={handleSave} className="space-y-4">
+          {errMsg && (
+            <div className="bg-red-50 border border-red-200 text-red-800 px-3 py-2 rounded-lg text-xs">
+              {errMsg}
+            </div>
+          )}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">ชื่อกิจกรรม *</label>
             <input
@@ -609,19 +740,30 @@ export const AdminActivitiesView: React.FC<{
             </label>
             <label className="inline-flex items-center gap-2 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-xs font-semibold rounded-lg cursor-pointer">
               <ImagePlus className="w-3.5 h-3.5" />
-              <span>อัปโหลดรูปภาพเพิ่ม (เลือกได้หลายรูป)</span>
+              <span>{uploading ? 'กำลังอัปโหลด...' : 'อัปโหลดรูปภาพเพิ่ม (เลือกได้หลายรูป)'}</span>
               <input
                 type="file"
                 multiple
                 accept=".jpg,.jpeg,.png,.webp"
+                disabled={uploading}
                 onChange={async (e) => {
-                  const files = Array.from(e.target.files || []);
+                  const input = e.target;
+                  const files = Array.from(input.files || []);
                   if (!files.length) return;
-                  const res = await uploadAdminMultipleFiles(files);
-                  setForm((prev) => ({
-                    ...prev,
-                    galleryUrls: [...prev.galleryUrls, ...res.files.map((x) => x.url)],
-                  }));
+                  setUploading(true);
+                  setErrMsg('');
+                  try {
+                    const res = await uploadAdminMultipleFiles(files);
+                    setForm((prev) => ({
+                      ...prev,
+                      galleryUrls: [...prev.galleryUrls, ...res.files.map((x) => x.url)],
+                    }));
+                  } catch (err) {
+                    setErrMsg((err as Error).message);
+                  } finally {
+                    setUploading(false);
+                    input.value = '';
+                  }
                 }}
                 className="hidden"
               />
@@ -629,7 +771,7 @@ export const AdminActivitiesView: React.FC<{
             {form.galleryUrls.length > 0 && (
               <div className="grid grid-cols-4 gap-2 pt-2">
                 {form.galleryUrls.map((url, idx) => (
-                  <div key={idx} className="relative group">
+                  <div key={`${url}-${idx}`} className="relative group">
                     <ImageWithFallback
                       src={url}
                       alt=""
@@ -643,7 +785,8 @@ export const AdminActivitiesView: React.FC<{
                           galleryUrls: prev.galleryUrls.filter((_, i) => i !== idx),
                         }))
                       }
-                      className="absolute top-1 right-1 bg-red-600 text-white rounded-full p-0.5 text-[10px] cursor-pointer"
+                      aria-label="ลบรูปภาพ"
+                      className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold cursor-pointer"
                     >
                       ×
                     </button>
@@ -663,9 +806,10 @@ export const AdminActivitiesView: React.FC<{
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-[#0B1F3A] text-white text-sm font-semibold rounded-lg cursor-pointer"
+              disabled={saving || uploading}
+              className="px-5 py-2 bg-[#0B1F3A] disabled:opacity-50 text-white text-sm font-semibold rounded-lg cursor-pointer"
             >
-              บันทึกกิจกรรม
+              {saving ? 'กำลังบันทึก...' : 'บันทึกกิจกรรม'}
             </button>
           </div>
         </form>
@@ -683,6 +827,9 @@ export const AdminAnnualEventsView: React.FC<{
 }> = ({ state, onRefresh }) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<AnnualEvent | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [errMsg, setErrMsg] = useState('');
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -696,6 +843,7 @@ export const AdminAnnualEventsView: React.FC<{
 
   const openNew = () => {
     setEditing(null);
+    setErrMsg('');
     setForm({
       title: '',
       description: '',
@@ -711,6 +859,7 @@ export const AdminAnnualEventsView: React.FC<{
 
   const openEdit = (evt: AnnualEvent) => {
     setEditing(evt);
+    setErrMsg('');
     setForm({
       title: evt.title,
       description: evt.description,
@@ -726,28 +875,46 @@ export const AdminAnnualEventsView: React.FC<{
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editing) {
-      await apiRequest(`/api/admin/annual-events/${editing.id}`, {
-        method: 'PUT',
-        body: JSON.stringify(form),
-      });
-    } else {
-      await apiRequest('/api/admin/annual-events', {
-        method: 'POST',
-        body: JSON.stringify(form),
-      });
+    setSaving(true);
+    setErrMsg('');
+    try {
+      if (editing) {
+        await apiRequest(`/api/admin/annual-events/${editing.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(form),
+        });
+      } else {
+        await apiRequest('/api/admin/annual-events', {
+          method: 'POST',
+          body: JSON.stringify(form),
+        });
+      }
+      setModalOpen(false);
+      await onRefresh();
+    } catch (err) {
+      setErrMsg((err as Error).message);
+    } finally {
+      setSaving(false);
     }
-    setModalOpen(false);
-    await onRefresh();
   };
 
   const handleDelete = async (id: string) => {
-    await apiRequest(`/api/admin/annual-events/${id}`, { method: 'DELETE' });
-    await onRefresh();
+    setErrMsg('');
+    try {
+      await apiRequest(`/api/admin/annual-events/${id}`, { method: 'DELETE' });
+      await onRefresh();
+    } catch (err) {
+      setErrMsg((err as Error).message);
+    }
   };
 
   return (
     <div className="space-y-6">
+      {errMsg && !modalOpen && (
+        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl text-sm">
+          {errMsg}
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-4 bg-white border border-slate-200 rounded-xl p-5">
         <div>
           <h2 className="text-lg font-bold text-[#0B1F3A]">จัดการปฏิทินงานประจำปี ({state.annualEvents.length} รายการ)</h2>
@@ -824,6 +991,11 @@ export const AdminAnnualEventsView: React.FC<{
         title={editing ? 'แก้ไขงานประจำปี' : 'เพิ่มงานประจำปี'}
       >
         <form onSubmit={handleSave} className="space-y-4">
+          {errMsg && (
+            <div className="bg-red-50 border border-red-200 text-red-800 px-3 py-2 rounded-lg text-xs">
+              {errMsg}
+            </div>
+          )}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">ชื่องานประจำปี *</label>
             <input
@@ -865,36 +1037,94 @@ export const AdminAnnualEventsView: React.FC<{
             />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <label className="inline-flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-xs font-semibold rounded-lg cursor-pointer">
-              <Upload className="w-3.5 h-3.5" />
-              <span>{form.imageUrl ? 'เปลี่ยนรูปภาพ' : 'แนบรูปภาพ'}</span>
-              <input
-                type="file"
-                accept=".jpg,.jpeg,.png,.webp"
-                onChange={async (e) => {
-                  const f = e.target.files?.[0];
-                  if (!f) return;
-                  const r = await uploadAdminFile(f);
-                  setForm({ ...form, imageUrl: r.url });
-                }}
-                className="hidden"
-              />
-            </label>
-            <label className="inline-flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-xs font-semibold rounded-lg cursor-pointer">
-              <FileText className="w-3.5 h-3.5" />
-              <span>{form.pdfUrl ? 'เปลี่ยนไฟล์ PDF' : 'แนบไฟล์ PDF'}</span>
-              <input
-                type="file"
-                accept=".pdf"
-                onChange={async (e) => {
-                  const f = e.target.files?.[0];
-                  if (!f) return;
-                  const r = await uploadAdminFile(f);
-                  setForm({ ...form, pdfUrl: r.url });
-                }}
-                className="hidden"
-              />
-            </label>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <label className="inline-flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-xs font-semibold rounded-lg cursor-pointer">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>{uploading ? 'กำลังอัปโหลด...' : form.imageUrl ? 'เปลี่ยนรูปภาพ' : 'แนบรูปภาพ'}</span>
+                  <input
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.webp"
+                    disabled={uploading}
+                    onChange={async (e) => {
+                      const input = e.target;
+                      const f = input.files?.[0];
+                      if (!f) return;
+                      setUploading(true);
+                      setErrMsg('');
+                      try {
+                        const r = await uploadAdminFile(f);
+                        setForm((prev) => ({ ...prev, imageUrl: r.url }));
+                      } catch (err) {
+                        setErrMsg((err as Error).message);
+                      } finally {
+                        setUploading(false);
+                        input.value = '';
+                      }
+                    }}
+                    className="hidden"
+                  />
+                </label>
+                {form.imageUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setForm((prev) => ({ ...prev, imageUrl: '' }))}
+                    className="text-xs text-red-600 hover:underline cursor-pointer"
+                  >
+                    ลบรูป
+                  </button>
+                )}
+              </div>
+              {form.imageUrl && (
+                <ImageWithFallback
+                  src={form.imageUrl}
+                  alt="ภาพประกอบงานประจำปี"
+                  className="w-28 h-20 rounded-lg object-cover border border-slate-200"
+                />
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <label className="inline-flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-xs font-semibold rounded-lg cursor-pointer">
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>{uploading ? 'กำลังอัปโหลด...' : form.pdfUrl ? 'เปลี่ยนไฟล์ PDF' : 'แนบไฟล์ PDF'}</span>
+                  <input
+                    type="file"
+                    accept=".pdf"
+                    disabled={uploading}
+                    onChange={async (e) => {
+                      const input = e.target;
+                      const f = input.files?.[0];
+                      if (!f) return;
+                      setUploading(true);
+                      setErrMsg('');
+                      try {
+                        const r = await uploadAdminFile(f);
+                        setForm((prev) => ({ ...prev, pdfUrl: r.url }));
+                      } catch (err) {
+                        setErrMsg((err as Error).message);
+                      } finally {
+                        setUploading(false);
+                        input.value = '';
+                      }
+                    }}
+                    className="hidden"
+                  />
+                </label>
+                {form.pdfUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setForm((prev) => ({ ...prev, pdfUrl: '' }))}
+                    className="text-xs text-red-600 hover:underline cursor-pointer"
+                  >
+                    ลบ PDF
+                  </button>
+                )}
+              </div>
+              {form.pdfUrl && (
+                <p className="text-xs text-emerald-700 truncate">แนบแล้ว: {form.pdfUrl}</p>
+              )}
+            </div>
           </div>
           <label className="inline-flex items-center gap-2 text-sm cursor-pointer">
             <input
@@ -914,9 +1144,10 @@ export const AdminAnnualEventsView: React.FC<{
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-[#0B1F3A] text-white text-sm font-semibold rounded-lg cursor-pointer"
+              disabled={saving || uploading}
+              className="px-5 py-2 bg-[#0B1F3A] disabled:opacity-50 text-white text-sm font-semibold rounded-lg cursor-pointer"
             >
-              บันทึกงานประจำปี
+              {saving ? 'กำลังบันทึก...' : 'บันทึกงานประจำปี'}
             </button>
           </div>
         </form>
@@ -935,6 +1166,9 @@ export const AdminDonationsView: React.FC<{
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<DonationRecord | null>(null);
   const [slipPreview, setSlipPreview] = useState<string | null>(null);
+  const [receiptDonation, setReceiptDonation] = useState<DonationRecord | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [errMsg, setErrMsg] = useState('');
   const [form, setForm] = useState({
     donorName: '',
     amount: 0,
@@ -947,6 +1181,7 @@ export const AdminDonationsView: React.FC<{
 
   const openNew = () => {
     setEditing(null);
+    setErrMsg('');
     setForm({
       donorName: '',
       amount: 500,
@@ -961,6 +1196,7 @@ export const AdminDonationsView: React.FC<{
 
   const openEdit = (d: DonationRecord) => {
     setEditing(d);
+    setErrMsg('');
     setForm({
       donorName: d.donorName,
       amount: d.amount,
@@ -975,36 +1211,59 @@ export const AdminDonationsView: React.FC<{
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editing) {
-      await apiRequest(`/api/admin/donations/${editing.id}`, {
-        method: 'PUT',
-        body: JSON.stringify(form),
-      });
-    } else {
-      await apiRequest('/api/admin/donations', {
-        method: 'POST',
-        body: JSON.stringify(form),
-      });
+    setSaving(true);
+    setErrMsg('');
+    try {
+      if (editing) {
+        await apiRequest(`/api/admin/donations/${editing.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(form),
+        });
+      } else {
+        await apiRequest('/api/admin/donations', {
+          method: 'POST',
+          body: JSON.stringify(form),
+        });
+      }
+      setModalOpen(false);
+      await onRefresh();
+    } catch (err) {
+      setErrMsg((err as Error).message);
+    } finally {
+      setSaving(false);
     }
-    setModalOpen(false);
-    await onRefresh();
   };
 
   const setStatus = async (id: string, status: 'verified' | 'rejected') => {
-    await apiRequest(`/api/admin/donations/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify({ status }),
-    });
-    await onRefresh();
+    setErrMsg('');
+    try {
+      await apiRequest(`/api/admin/donations/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ status }),
+      });
+      await onRefresh();
+    } catch (err) {
+      setErrMsg((err as Error).message);
+    }
   };
 
   const handleDelete = async (id: string) => {
-    await apiRequest(`/api/admin/donations/${id}`, { method: 'DELETE' });
-    await onRefresh();
+    setErrMsg('');
+    try {
+      await apiRequest(`/api/admin/donations/${id}`, { method: 'DELETE' });
+      await onRefresh();
+    } catch (err) {
+      setErrMsg((err as Error).message);
+    }
   };
 
   return (
     <div className="space-y-6">
+      {errMsg && !modalOpen && (
+        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl text-sm">
+          {errMsg}
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-4 bg-white border border-slate-200 rounded-xl p-5">
         <div>
           <h2 className="text-lg font-bold text-[#0B1F3A]">จัดการรายการบริจาคและออกใบเสร็จ ({state.donations.length} รายการ)</h2>
@@ -1101,14 +1360,7 @@ export const AdminDonationsView: React.FC<{
                         )}
                         <button
                           type="button"
-                          onClick={() =>
-                            printDonationReceipt(
-                              d,
-                              state.settings.foundationName,
-                              state.settings.address,
-                              state.settings.emergencyPhone
-                            )
-                          }
+                          onClick={() => setReceiptDonation(d)}
                           className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-xs font-semibold rounded cursor-pointer"
                         >
                           <Printer className="w-3.5 h-3.5" />
@@ -1151,6 +1403,11 @@ export const AdminDonationsView: React.FC<{
         title={editing ? 'แก้ไขรายการบริจาค' : 'บันทึกรายการบริจาค'}
       >
         <form onSubmit={handleSave} className="space-y-4">
+          {errMsg && (
+            <div className="bg-red-50 border border-red-200 text-red-800 px-3 py-2 rounded-lg text-xs">
+              {errMsg}
+            </div>
+          )}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">ชื่อผู้บริจาค *</label>
             <input
@@ -1224,6 +1481,15 @@ export const AdminDonationsView: React.FC<{
               </select>
             </div>
           </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">หมายเหตุ</label>
+            <textarea
+              rows={2}
+              value={form.note}
+              onChange={(e) => setForm({ ...form, note: e.target.value })}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+            />
+          </div>
           <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
             <button
               type="button"
@@ -1234,13 +1500,20 @@ export const AdminDonationsView: React.FC<{
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-[#0B1F3A] text-white text-sm font-semibold rounded-lg cursor-pointer"
+              disabled={saving}
+              className="px-5 py-2 bg-[#0B1F3A] disabled:opacity-50 text-white text-sm font-semibold rounded-lg cursor-pointer"
             >
-              บันทึกรายการ
+              {saving ? 'กำลังบันทึก...' : 'บันทึกรายการ'}
             </button>
           </div>
         </form>
       </Modal>
+
+      <ReceiptModal
+        donation={receiptDonation}
+        settings={state.settings}
+        onClose={() => setReceiptDonation(null)}
+      />
     </div>
   );
 };
@@ -1264,6 +1537,8 @@ export const AdminGalleryView: React.FC<{
   const [uploadCat, setUploadCat] = useState<GalleryCategory>('งานกู้ชีพ');
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [errMsg, setErrMsg] = useState('');
   const [editing, setEditing] = useState<GalleryItem | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editCat, setEditCat] = useState<GalleryCategory>('งานกู้ชีพ');
@@ -1271,6 +1546,7 @@ export const AdminGalleryView: React.FC<{
   const handleFiles = async (files: File[]) => {
     if (!files.length) return;
     setUploading(true);
+    setErrMsg('');
     try {
       const uploaded = await uploadAdminMultipleFiles(files);
       await apiRequest('/api/admin/gallery', {
@@ -1284,6 +1560,8 @@ export const AdminGalleryView: React.FC<{
         }),
       });
       await onRefresh();
+    } catch (err) {
+      setErrMsg((err as Error).message);
     } finally {
       setUploading(false);
     }
@@ -1292,21 +1570,39 @@ export const AdminGalleryView: React.FC<{
   const saveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editing) return;
-    await apiRequest(`/api/admin/gallery/${editing.id}`, {
-      method: 'PUT',
-      body: JSON.stringify({ title: editTitle, category: editCat }),
-    });
-    setEditing(null);
-    await onRefresh();
+    setSaving(true);
+    setErrMsg('');
+    try {
+      await apiRequest(`/api/admin/gallery/${editing.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ title: editTitle, category: editCat }),
+      });
+      setEditing(null);
+      await onRefresh();
+    } catch (err) {
+      setErrMsg((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = async (id: string) => {
-    await apiRequest(`/api/admin/gallery/${id}`, { method: 'DELETE' });
-    await onRefresh();
+    setErrMsg('');
+    try {
+      await apiRequest(`/api/admin/gallery/${id}`, { method: 'DELETE' });
+      await onRefresh();
+    } catch (err) {
+      setErrMsg((err as Error).message);
+    }
   };
 
   return (
     <div className="space-y-6">
+      {errMsg && !editing && (
+        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl text-sm">
+          {errMsg}
+        </div>
+      )}
       <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -1350,7 +1646,12 @@ export const AdminGalleryView: React.FC<{
             type="file"
             multiple
             accept=".jpg,.jpeg,.png,.webp"
-            onChange={(e) => handleFiles(Array.from(e.target.files || []))}
+            disabled={uploading}
+            onChange={async (e) => {
+              const input = e.target;
+              await handleFiles(Array.from(input.files || []));
+              input.value = '';
+            }}
             className="hidden"
           />
         </label>
@@ -1393,6 +1694,11 @@ export const AdminGalleryView: React.FC<{
 
       <Modal open={Boolean(editing)} onClose={() => setEditing(null)} title="แก้ไขข้อมูลรูปภาพ">
         <form onSubmit={saveEdit} className="space-y-4">
+          {errMsg && (
+            <div className="bg-red-50 border border-red-200 text-red-800 px-3 py-2 rounded-lg text-xs">
+              {errMsg}
+            </div>
+          )}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">คำบรรยายภาพ</label>
             <input
@@ -1418,8 +1724,19 @@ export const AdminGalleryView: React.FC<{
             </select>
           </div>
           <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
-            <button type="submit" className="px-5 py-2 bg-[#0B1F3A] text-white text-sm font-semibold rounded-lg cursor-pointer">
-              บันทึกการแก้ไข
+            <button
+              type="button"
+              onClick={() => setEditing(null)}
+              className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
+            >
+              ยกเลิก
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-5 py-2 bg-[#0B1F3A] disabled:opacity-50 text-white text-sm font-semibold rounded-lg cursor-pointer"
+            >
+              {saving ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}
             </button>
           </div>
         </form>
@@ -1438,20 +1755,45 @@ export const AdminVolunteersView: React.FC<{
   const [editing, setEditing] = useState<VolunteerApplication | null>(null);
   const [note, setNote] = useState('');
   const [status, setStatus] = useState<'pending' | 'approved' | 'rejected'>('pending');
+  const [saving, setSaving] = useState(false);
+  const [errMsg, setErrMsg] = useState('');
 
   const saveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editing) return;
-    await apiRequest(`/api/admin/volunteers/${editing.id}`, {
-      method: 'PUT',
-      body: JSON.stringify({ status, adminNote: note }),
-    });
-    setEditing(null);
-    await onRefresh();
+    setSaving(true);
+    setErrMsg('');
+    try {
+      await apiRequest(`/api/admin/volunteers/${editing.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ status, adminNote: note }),
+      });
+      setEditing(null);
+      await onRefresh();
+    } catch (err) {
+      setErrMsg((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    setErrMsg('');
+    try {
+      await apiRequest(`/api/admin/volunteers/${id}`, { method: 'DELETE' });
+      await onRefresh();
+    } catch (err) {
+      setErrMsg((err as Error).message);
+    }
   };
 
   return (
     <div className="space-y-6">
+      {errMsg && !editing && (
+        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl text-sm">
+          {errMsg}
+        </div>
+      )}
       <div className="bg-white border border-slate-200 rounded-xl p-5">
         <h2 className="text-lg font-bold text-[#0B1F3A]">จัดการใบสมัครอาสาสมัคร ({state.volunteers.length} คน)</h2>
         <p className="text-xs text-slate-500">ตรวจสอบเอกสาร อนุมัติ หรือปฏิเสธใบสมัครอาสาสมัคร</p>
@@ -1515,6 +1857,7 @@ export const AdminVolunteersView: React.FC<{
                         <button
                           type="button"
                           onClick={() => {
+                            setErrMsg('');
                             setEditing(v);
                             setStatus(v.status);
                             setNote(v.adminNote);
@@ -1526,10 +1869,7 @@ export const AdminVolunteersView: React.FC<{
                         </button>
                         <button
                           type="button"
-                          onClick={async () => {
-                            await apiRequest(`/api/admin/volunteers/${v.id}`, { method: 'DELETE' });
-                            await onRefresh();
-                          }}
+                          onClick={() => handleDelete(v.id)}
                           className="p-1.5 text-red-600 hover:bg-red-50 rounded cursor-pointer"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -1547,6 +1887,11 @@ export const AdminVolunteersView: React.FC<{
       <Modal open={Boolean(editing)} onClose={() => setEditing(null)} title="พิจารณาใบสมัครอาสาสมัคร">
         {editing && (
           <form onSubmit={saveEdit} className="space-y-4">
+            {errMsg && (
+              <div className="bg-red-50 border border-red-200 text-red-800 px-3 py-2 rounded-lg text-xs">
+                {errMsg}
+              </div>
+            )}
             <div className="text-sm space-y-1 bg-slate-50 p-3 rounded-lg border border-slate-200">
               <p><strong>ชื่อ:</strong> {editing.fullName}</p>
               <p><strong>ที่อยู่:</strong> {editing.address}</p>
@@ -1573,9 +1918,20 @@ export const AdminVolunteersView: React.FC<{
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
               />
             </div>
-            <div className="flex justify-end">
-              <button type="submit" className="px-5 py-2 bg-[#0B1F3A] text-white text-sm font-semibold rounded-lg cursor-pointer">
-                บันทึกสถานะ
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setEditing(null)}
+                className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-5 py-2 bg-[#0B1F3A] disabled:opacity-50 text-white text-sm font-semibold rounded-lg cursor-pointer"
+              >
+                {saving ? 'กำลังบันทึก...' : 'บันทึกสถานะ'}
               </button>
             </div>
           </form>
@@ -1592,20 +1948,45 @@ export const AdminContactsView: React.FC<{
   const [editing, setEditing] = useState<ContactMessage | null>(null);
   const [status, setStatus] = useState<'new' | 'in_progress' | 'resolved'>('new');
   const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [errMsg, setErrMsg] = useState('');
 
   const saveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editing) return;
-    await apiRequest(`/api/admin/contacts/${editing.id}`, {
-      method: 'PUT',
-      body: JSON.stringify({ status, adminNote: note }),
-    });
-    setEditing(null);
-    await onRefresh();
+    setSaving(true);
+    setErrMsg('');
+    try {
+      await apiRequest(`/api/admin/contacts/${editing.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ status, adminNote: note }),
+      });
+      setEditing(null);
+      await onRefresh();
+    } catch (err) {
+      setErrMsg((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    setErrMsg('');
+    try {
+      await apiRequest(`/api/admin/contacts/${id}`, { method: 'DELETE' });
+      await onRefresh();
+    } catch (err) {
+      setErrMsg((err as Error).message);
+    }
   };
 
   return (
     <div className="space-y-6">
+      {errMsg && !editing && (
+        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl text-sm">
+          {errMsg}
+        </div>
+      )}
       <div className="bg-white border border-slate-200 rounded-xl p-5">
         <h2 className="text-lg font-bold text-[#0B1F3A]">รายการแจ้งเหตุฉุกเฉินและติดต่อประสานงาน ({state.contacts.length} รายการ)</h2>
         <p className="text-xs text-slate-500">ติดตามสถานะการรับแจ้งเหตุและข้อความติดต่อจากหน้าเว็บไซต์</p>
@@ -1650,6 +2031,7 @@ export const AdminContactsView: React.FC<{
                         <button
                           type="button"
                           onClick={() => {
+                            setErrMsg('');
                             setEditing(c);
                             setStatus(c.status);
                             setNote(c.adminNote);
@@ -1661,10 +2043,7 @@ export const AdminContactsView: React.FC<{
                         </button>
                         <button
                           type="button"
-                          onClick={async () => {
-                            await apiRequest(`/api/admin/contacts/${c.id}`, { method: 'DELETE' });
-                            await onRefresh();
-                          }}
+                          onClick={() => handleDelete(c.id)}
                           className="p-1.5 text-red-600 hover:bg-red-50 rounded cursor-pointer"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -1682,6 +2061,11 @@ export const AdminContactsView: React.FC<{
       <Modal open={Boolean(editing)} onClose={() => setEditing(null)} title="อัปเดตสถานะการประสานงาน">
         {editing && (
           <form onSubmit={saveEdit} className="space-y-4">
+            {errMsg && (
+              <div className="bg-red-50 border border-red-200 text-red-800 px-3 py-2 rounded-lg text-xs">
+                {errMsg}
+              </div>
+            )}
             <div className="text-sm space-y-1 bg-slate-50 p-3 rounded-lg border border-slate-200">
               <p><strong>ผู้แจ้ง:</strong> {editing.name} ({editing.phone})</p>
               {editing.location && <p><strong>พิกัด/สถานที่:</strong> {editing.location}</p>}
@@ -1708,9 +2092,20 @@ export const AdminContactsView: React.FC<{
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
               />
             </div>
-            <div className="flex justify-end">
-              <button type="submit" className="px-5 py-2 bg-[#0B1F3A] text-white text-sm font-semibold rounded-lg cursor-pointer">
-                บันทึกสถานะ
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setEditing(null)}
+                className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-5 py-2 bg-[#0B1F3A] disabled:opacity-50 text-white text-sm font-semibold rounded-lg cursor-pointer"
+              >
+                {saving ? 'กำลังบันทึก...' : 'บันทึกสถานะ'}
               </button>
             </div>
           </form>

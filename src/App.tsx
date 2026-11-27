@@ -11,6 +11,7 @@ import {
   fetchAdminState,
   setAuthToken,
   getAuthToken,
+  setUnauthorizedHandler,
   type AuthStatusResponse,
 } from './lib/api';
 import { Navbar } from './components/Navbar';
@@ -92,8 +93,12 @@ export default function App() {
     }
   }, [loadPublic, loadAuthAndAdmin]);
 
-  // Initial load
+  // Initial load & unauthorized handler
   useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setAdminState(null);
+      setAuthStatus((prev) => (prev ? { ...prev, authenticated: false, user: null } : null));
+    });
     let mounted = true;
     (async () => {
       try {
@@ -106,6 +111,7 @@ export default function App() {
     })();
     return () => {
       mounted = false;
+      setUnauthorizedHandler(null);
     };
   }, [loadPublic, loadAuthAndAdmin]);
 

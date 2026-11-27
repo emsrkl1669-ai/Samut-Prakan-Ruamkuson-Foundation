@@ -75,7 +75,7 @@ export const NewsPage: React.FC<CommunityPagesProps> = ({
                 onClick={() => setSelectedNews(item)}
                 className="bg-white border border-slate-200 rounded-xl overflow-hidden hover:border-slate-300 hover:shadow-md transition-all cursor-pointer flex flex-col"
               >
-                <div className="aspect-16/10 w-full bg-slate-100 overflow-hidden">
+                <div className="aspect-[16/10] w-full bg-slate-100 overflow-hidden">
                   <ImageWithFallback
                     src={item.coverImageUrl}
                     alt={item.title}
@@ -150,7 +150,7 @@ export const NewsPage: React.FC<CommunityPagesProps> = ({
                       key={idx}
                       src={url}
                       alt={`${selectedNews.title} ภาพที่ ${idx + 1}`}
-                      className="w-full aspect-4/3 object-cover rounded-lg border border-slate-200"
+                      className="w-full aspect-[4/3] object-cover rounded-lg border border-slate-200"
                     />
                   ))}
                 </div>
@@ -322,7 +322,7 @@ export const ActivitiesPage: React.FC<CommunityPagesProps> = ({
                         <div
                           key={idx}
                           onClick={() => setSelectedActivity(act)}
-                          className="aspect-16/10 bg-slate-100 rounded-lg overflow-hidden cursor-pointer relative"
+                          className="aspect-[16/10] bg-slate-100 rounded-lg overflow-hidden cursor-pointer relative"
                         >
                           <ImageWithFallback
                             src={url}
@@ -365,7 +365,7 @@ export const ActivitiesPage: React.FC<CommunityPagesProps> = ({
                 onClick={() => setSelectedActivity(act)}
                 className="bg-white border border-slate-200 rounded-xl overflow-hidden hover:shadow-md transition-all cursor-pointer flex flex-col"
               >
-                <div className="aspect-4/3 bg-slate-100 overflow-hidden">
+                <div className="aspect-[4/3] bg-slate-100 overflow-hidden">
                   <ImageWithFallback
                     src={act.galleryUrls[0]}
                     alt={act.title}
@@ -443,7 +443,7 @@ export const ActivitiesPage: React.FC<CommunityPagesProps> = ({
                     key={idx}
                     src={url}
                     alt={`${selectedActivity.title} ${idx + 1}`}
-                    className="w-full aspect-4/3 object-cover rounded-lg border border-slate-200"
+                    className="w-full aspect-[4/3] object-cover rounded-lg border border-slate-200"
                   />
                 ))}
               </div>
@@ -841,7 +841,7 @@ export const GalleryPage: React.FC<CommunityPagesProps> = ({
                 onClick={() => setSelectedPhoto(item)}
                 className="group bg-white border border-slate-200 rounded-xl overflow-hidden text-left hover:shadow-md transition-all cursor-pointer"
               >
-                <div className="aspect-4/3 bg-slate-100 overflow-hidden">
+                <div className="aspect-[4/3] bg-slate-100 overflow-hidden">
                   <ImageWithFallback
                     src={item.imageUrl}
                     alt={item.title}

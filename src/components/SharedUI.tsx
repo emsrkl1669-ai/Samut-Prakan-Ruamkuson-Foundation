@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
-import { X, ShieldCheck, Edit3, Image as ImageIcon } from 'lucide-react';
-import { isSafeUrl } from '../lib/api';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { X, ShieldCheck, Edit3, Image as ImageIcon, Printer } from 'lucide-react';
+import { isSafeUrl, formatCurrency, formatThaiDate } from '../lib/api';
+import type { DonationRecord, SiteSettings } from '../types';
 
 interface ImageWithFallbackProps {
   src?: string;
@@ -18,6 +20,10 @@ export const ImageWithFallback: React.FC<ImageWithFallbackProps> = ({
   fallbackIcon,
 }) => {
   const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
 
   if (!src || !isSafeUrl(src) || failed) {
     return (
@@ -126,7 +132,7 @@ export const Modal: React.FC<ModalProps> = ({
       <div
         className={`w-full ${maxWidthClass} bg-white rounded-xl border border-slate-200 shadow-2xl max-h-[90vh] flex flex-col overflow-hidden`}
       >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50 no-print">
           <h3 className="text-lg font-bold text-slate-900 truncate pr-4">{title}</h3>
           <button
             type="button"
@@ -140,6 +146,130 @@ export const Modal: React.FC<ModalProps> = ({
         <div className="p-6 overflow-y-auto">{children}</div>
       </div>
     </div>
+  );
+};
+
+interface ReceiptModalProps {
+  donation: DonationRecord | null;
+  settings: SiteSettings;
+  onClose: () => void;
+}
+
+export const ReceiptModal: React.FC<ReceiptModalProps> = ({
+  donation,
+  settings,
+  onClose,
+}) => {
+  if (!donation) return null;
+
+  return createPortal(
+    <div
+      className="receipt-print-portal fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`ใบสำคัญรับเงินบริจาค ${donation.receiptNo}`}
+    >
+      <div className="receipt-print-portal-card w-full max-w-2xl bg-white rounded-xl border border-slate-200 shadow-2xl max-h-[90vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50 no-print">
+          <h3 className="text-lg font-bold text-slate-900 truncate pr-4">
+            ใบสำคัญรับเงินบริจาค {donation.receiptNo}
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-200/70 rounded-lg transition-colors cursor-pointer"
+            aria-label="ปิดหน้าต่าง"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="receipt-print-portal-body p-6 overflow-y-auto space-y-6">
+          <div className="border-2 border-[#0B1F3A] rounded-lg p-6 sm:p-8 bg-white space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b-2 border-slate-200 pb-4">
+              <div className="flex items-start gap-3">
+                <ImageWithFallback
+                  src={settings.logoUrl}
+                  alt={settings.foundationName}
+                  className="w-12 h-12 object-contain rounded-full shrink-0"
+                />
+                <div>
+                  <h4 className="text-lg font-bold text-[#0B1F3A]">{settings.foundationName}</h4>
+                  <p className="text-xs text-slate-600 mt-0.5">{settings.address}</p>
+                  <p className="text-xs text-slate-600 tabular-nums">
+                    โทรศัพท์ {settings.emergencyPhone}
+                  </p>
+                </div>
+              </div>
+              <div className="sm:text-right text-xs space-y-0.5 shrink-0">
+                <p className="font-bold text-[#C81E1E] text-sm">ใบสำคัญรับเงินบริจาค</p>
+                <p className="tabular-nums">
+                  เลขที่: <strong className="font-mono">{donation.receiptNo}</strong>
+                </p>
+                <p className="tabular-nums">วันที่: {formatThaiDate(donation.donatedAt)}</p>
+              </div>
+            </div>
+
+            <div className="divide-y divide-slate-100 text-sm">
+              <div className="py-2.5 flex justify-between gap-4">
+                <span className="text-slate-600">ได้รับเงินบริจาคจาก</span>
+                <strong className="text-slate-900 text-right">{donation.donorName}</strong>
+              </div>
+              <div className="py-2.5 flex justify-between gap-4">
+                <span className="text-slate-600">วัตถุประสงค์การบริจาค</span>
+                <strong className="text-slate-900 text-right">{donation.purpose}</strong>
+              </div>
+              <div className="py-2.5 flex justify-between gap-4">
+                <span className="text-slate-600">ช่องทางการบริจาค</span>
+                <strong className="text-slate-900 text-right">{donation.channel}</strong>
+              </div>
+              <div className="py-2.5 flex justify-between gap-4">
+                <span className="text-slate-600">สถานะการตรวจสอบ</span>
+                <strong className="text-emerald-700 text-right">
+                  {donation.status === 'verified'
+                    ? 'ตรวจสอบแล้ว'
+                    : donation.status === 'rejected'
+                    ? 'ปฏิเสธ'
+                    : 'รอตรวจสอบ'}
+                </strong>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-300 rounded-lg p-4 flex items-center justify-between">
+              <span className="text-sm font-semibold text-slate-700">จำนวนเงินบริจาคทั้งสิ้น</span>
+              <span className="text-2xl font-extrabold text-[#C81E1E] tabular-nums">
+                {formatCurrency(donation.amount)} บาท
+              </span>
+            </div>
+
+            <div className="pt-6 flex flex-col sm:flex-row sm:items-end justify-between gap-6 text-xs text-slate-500">
+              <p>ขออนุโมทนาบุญในจิตอันเป็นกุศลของท่าน</p>
+              <div className="text-center w-52 border-t border-slate-400 pt-2">
+                เจ้าหน้าที่การเงิน / ผู้รับเงิน
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 no-print">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
+            >
+              ปิด
+            </button>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#0B1F3A] hover:bg-[#122D52] text-white text-sm font-semibold rounded-lg cursor-pointer"
+            >
+              <Printer className="w-4 h-4" />
+              <span>พิมพ์ / บันทึกเป็น PDF</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 };
 

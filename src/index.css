@@ -29,6 +29,27 @@
   .print-only {
     display: block !important;
   }
+  body:has(.receipt-print-portal) #root {
+    display: none !important;
+  }
+  .receipt-print-portal {
+    position: static !important;
+    inset: auto !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    display: block !important;
+  }
+  .receipt-print-portal-card {
+    max-width: 100% !important;
+    max-height: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+  }
+  .receipt-print-portal-body {
+    padding: 0 !important;
+    overflow: visible !important;
+  }
   body {
     background: #ffffff !important;
     color: #000000 !important;

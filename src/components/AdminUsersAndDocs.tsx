@@ -28,6 +28,13 @@ export const AdminUsersView: React.FC<{
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<AdminUserPublic | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+  const [pageError, setPageError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [twoFactorSetup, setTwoFactorSetup] = useState<{
+    username: string;
+    secret: string;
+    uri: string;
+  } | null>(null);
   const [form, setForm] = useState({
     username: '',
     fullName: '',
@@ -35,6 +42,7 @@ export const AdminUsersView: React.FC<{
     role: 'Admin' as AdminRole,
     password: '',
     twoFactorEnabled: false,
+    regenerate2FA: false,
     active: true,
   });
 
@@ -48,6 +56,7 @@ export const AdminUsersView: React.FC<{
       role: 'Admin',
       password: '',
       twoFactorEnabled: false,
+      regenerate2FA: false,
       active: true,
     });
     setModalOpen(true);
@@ -63,6 +72,7 @@ export const AdminUsersView: React.FC<{
       role: u.role,
       password: '',
       twoFactorEnabled: u.twoFactorEnabled,
+      regenerate2FA: false,
       active: u.active,
     });
     setModalOpen(true);
@@ -71,44 +81,103 @@ export const AdminUsersView: React.FC<{
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
+    setPageError('');
+    setSaving(true);
     try {
+      let res: AdminUserPublic & { twoFactorSetupSecret?: string; twoFactorUri?: string };
       if (editing) {
-        await apiRequest(`/api/admin/users/${editing.id}`, {
+        res = await apiRequest(`/api/admin/users/${editing.id}`, {
           method: 'PUT',
           body: JSON.stringify(form),
         });
       } else {
-        await apiRequest('/api/admin/users', {
+        res = await apiRequest('/api/admin/users', {
           method: 'POST',
           body: JSON.stringify(form),
+        });
+      }
+      if (res.twoFactorSetupSecret && res.twoFactorUri) {
+        setTwoFactorSetup({
+          username: res.username,
+          secret: res.twoFactorSetupSecret,
+          uri: res.twoFactorUri,
         });
       }
       setModalOpen(false);
       await onRefresh();
     } catch (err) {
       setErrorMsg((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteUser = async (id: string) => {
+    setPageError('');
+    try {
+      await apiRequest(`/api/admin/users/${id}`, { method: 'DELETE' });
+      await onRefresh();
+    } catch (err) {
+      setPageError((err as Error).message);
     }
   };
 
   const handleDownloadBackup = async () => {
-    const token = getAuthToken();
-    const res = await fetch('/api/admin/backup', {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
-    if (!res.ok) return;
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `ruamkusol-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    setPageError('');
+    try {
+      const token = getAuthToken();
+      const res = await fetch('/api/admin/backup', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        throw new Error('ไม่สามารถสำรองฐานข้อมูลได้');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ruamkusol-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setPageError((err as Error).message);
+    }
   };
 
   return (
     <div className="space-y-8">
+      {pageError && (
+        <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-900 text-sm font-medium">
+          {pageError}
+        </div>
+      )}
+      {twoFactorSetup && (
+        <div className="p-5 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 space-y-2">
+          <div className="flex items-center justify-between gap-4">
+            <h3 className="text-sm font-bold">
+              ตั้งค่าการยืนยันตัวตน 2 ขั้นตอน (2FA / Authenticator) สำหรับบัญชี {twoFactorSetup.username}
+            </h3>
+            <button
+              type="button"
+              onClick={() => setTwoFactorSetup(null)}
+              className="text-xs font-semibold text-amber-900 hover:underline cursor-pointer"
+            >
+              ปิดข้อความนี้
+            </button>
+          </div>
+          <p className="text-xs">
+            กรุณาบันทึกรหัสลับ (Secret Key) นี้ในแอป Google Authenticator / Authy เพื่อใช้สร้างรหัส 6 หลักตอนเข้าสู่ระบบ (แสดงเพียงครั้งเดียว):
+          </p>
+          <p className="font-mono text-sm font-bold bg-white px-3 py-2 rounded border border-amber-200 select-all">
+            {twoFactorSetup.secret}
+          </p>
+          <p className="font-mono text-[11px] text-amber-800 break-all select-all">
+            {twoFactorSetup.uri}
+          </p>
+        </div>
+      )}
       {/* Header & Backup */}
       <div className="flex flex-wrap items-center justify-between gap-4 bg-white border border-slate-200 rounded-xl p-5">
         <div>
@@ -201,10 +270,7 @@ export const AdminUsersView: React.FC<{
                       </button>
                       <button
                         type="button"
-                        onClick={async () => {
-                          await apiRequest(`/api/admin/users/${u.id}`, { method: 'DELETE' });
-                          await onRefresh();
-                        }}
+                        onClick={() => handleDeleteUser(u.id)}
                         className="p-1.5 text-red-600 hover:bg-red-50 rounded cursor-pointer"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -331,23 +397,35 @@ export const AdminUsersView: React.FC<{
             />
           </div>
 
-          <div className="flex items-center gap-6 text-sm">
-            <label className="inline-flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.twoFactorEnabled}
-                onChange={(e) => setForm({ ...form, twoFactorEnabled: e.target.checked })}
-              />
-              <span>เปิดใช้งานยืนยันตัวตน 2 ขั้นตอน (2FA)</span>
-            </label>
-            <label className="inline-flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.active}
-                onChange={(e) => setForm({ ...form, active: e.target.checked })}
-              />
-              <span>เปิดใช้งานบัญชี</span>
-            </label>
+          <div className="space-y-2 text-sm">
+            <div className="flex flex-wrap items-center gap-6">
+              <label className="inline-flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.twoFactorEnabled}
+                  onChange={(e) => setForm({ ...form, twoFactorEnabled: e.target.checked })}
+                />
+                <span>เปิดใช้งานยืนยันตัวตน 2 ขั้นตอน (2FA TOTP)</span>
+              </label>
+              <label className="inline-flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.active}
+                  onChange={(e) => setForm({ ...form, active: e.target.checked })}
+                />
+                <span>เปิดใช้งานบัญชี</span>
+              </label>
+            </div>
+            {editing && form.twoFactorEnabled && (
+              <label className="inline-flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.regenerate2FA}
+                  onChange={(e) => setForm({ ...form, regenerate2FA: e.target.checked })}
+                />
+                <span>สร้าง Secret Key 2FA ใหม่ (สำหรับตั้งค่าในแอป Authenticator ใหม่)</span>
+              </label>
+            )}
           </div>
 
           <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
@@ -360,9 +438,10 @@ export const AdminUsersView: React.FC<{
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-[#0B1F3A] text-white text-sm font-semibold rounded-lg cursor-pointer"
+              disabled={saving}
+              className="px-5 py-2 bg-[#0B1F3A] text-white text-sm font-semibold rounded-lg cursor-pointer disabled:opacity-50"
             >
-              บันทึกบัญชีผู้ใช้
+              {saving ? 'กำลังบันทึก...' : 'บันทึกบัญชีผู้ใช้'}
             </button>
           </div>
         </form>
