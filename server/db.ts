@@ -33,7 +33,6 @@ import {
 export interface AdminUserStored extends AdminUserPublic {
   passwordHash: string;
   passwordSalt: string;
-  twoFactorSecret?: string;
 }
 
 export interface FullDatabase {
@@ -223,9 +222,16 @@ export function toAdminState(db: FullDatabase): AdminAppState {
     volunteers: db.volunteers,
     contacts: db.contacts,
     monthlyStats: db.monthlyStats,
-    adminUsers: db.adminUsers.map(
-      ({ passwordHash: _h, passwordSalt: _s, twoFactorSecret: _t, ...pub }) => pub
-    ),
+    adminUsers: db.adminUsers.map((u) => {
+      const {
+        passwordHash: _h,
+        passwordSalt: _s,
+        twoFactorSecret: _t,
+        twoFactorEnabled: _e,
+        ...pub
+      } = u as AdminUserStored & { twoFactorSecret?: string; twoFactorEnabled?: boolean };
+      return pub;
+    }),
     auditLogs: db.auditLogs,
     visitorCount: db.visitorCount,
     lastUpdatedAt: db.lastUpdatedAt,

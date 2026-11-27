@@ -240,7 +240,6 @@ export interface AdminUserPublic {
   fullName: string;
   email: string;
   role: AdminRole;
-  twoFactorEnabled: boolean;
   active: boolean;
   createdAt: string;
 }

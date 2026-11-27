@@ -30,19 +30,12 @@ export const AdminUsersView: React.FC<{
   const [errorMsg, setErrorMsg] = useState('');
   const [pageError, setPageError] = useState('');
   const [saving, setSaving] = useState(false);
-  const [twoFactorSetup, setTwoFactorSetup] = useState<{
-    username: string;
-    secret: string;
-    uri: string;
-  } | null>(null);
   const [form, setForm] = useState({
     username: '',
     fullName: '',
     email: '',
     role: 'Admin' as AdminRole,
     password: '',
-    twoFactorEnabled: false,
-    regenerate2FA: false,
     active: true,
   });
 
@@ -55,8 +48,6 @@ export const AdminUsersView: React.FC<{
       email: '',
       role: 'Admin',
       password: '',
-      twoFactorEnabled: false,
-      regenerate2FA: false,
       active: true,
     });
     setModalOpen(true);
@@ -71,8 +62,6 @@ export const AdminUsersView: React.FC<{
       email: u.email,
       role: u.role,
       password: '',
-      twoFactorEnabled: u.twoFactorEnabled,
-      regenerate2FA: false,
       active: u.active,
     });
     setModalOpen(true);
@@ -84,23 +73,15 @@ export const AdminUsersView: React.FC<{
     setPageError('');
     setSaving(true);
     try {
-      let res: AdminUserPublic & { twoFactorSetupSecret?: string; twoFactorUri?: string };
       if (editing) {
-        res = await apiRequest(`/api/admin/users/${editing.id}`, {
+        await apiRequest(`/api/admin/users/${editing.id}`, {
           method: 'PUT',
           body: JSON.stringify(form),
         });
       } else {
-        res = await apiRequest('/api/admin/users', {
+        await apiRequest('/api/admin/users', {
           method: 'POST',
           body: JSON.stringify(form),
-        });
-      }
-      if (res.twoFactorSetupSecret && res.twoFactorUri) {
-        setTwoFactorSetup({
-          username: res.username,
-          secret: res.twoFactorSetupSecret,
-          uri: res.twoFactorUri,
         });
       }
       setModalOpen(false);
@@ -151,31 +132,6 @@ export const AdminUsersView: React.FC<{
       {pageError && (
         <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-900 text-sm font-medium">
           {pageError}
-        </div>
-      )}
-      {twoFactorSetup && (
-        <div className="p-5 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 space-y-2">
-          <div className="flex items-center justify-between gap-4">
-            <h3 className="text-sm font-bold">
-              ตั้งค่าการยืนยันตัวตน 2 ขั้นตอน (2FA / Authenticator) สำหรับบัญชี {twoFactorSetup.username}
-            </h3>
-            <button
-              type="button"
-              onClick={() => setTwoFactorSetup(null)}
-              className="text-xs font-semibold text-amber-900 hover:underline cursor-pointer"
-            >
-              ปิดข้อความนี้
-            </button>
-          </div>
-          <p className="text-xs">
-            กรุณาบันทึกรหัสลับ (Secret Key) นี้ในแอป Google Authenticator / Authy เพื่อใช้สร้างรหัส 6 หลักตอนเข้าสู่ระบบ (แสดงเพียงครั้งเดียว):
-          </p>
-          <p className="font-mono text-sm font-bold bg-white px-3 py-2 rounded border border-amber-200 select-all">
-            {twoFactorSetup.secret}
-          </p>
-          <p className="font-mono text-[11px] text-amber-800 break-all select-all">
-            {twoFactorSetup.uri}
-          </p>
         </div>
       )}
       {/* Header & Backup */}
@@ -236,7 +192,6 @@ export const AdminUsersView: React.FC<{
                 <th className="px-4 py-3">ชื่อผู้ใช้</th>
                 <th className="px-4 py-3">ชื่อ-นามสกุล</th>
                 <th className="px-4 py-3">สิทธิ์การใช้งาน</th>
-                <th className="px-4 py-3">2FA</th>
                 <th className="px-4 py-3">สถานะ</th>
                 <th className="px-4 py-3 text-right">จัดการ</th>
               </tr>
@@ -252,7 +207,6 @@ export const AdminUsersView: React.FC<{
                     <div className="text-xs text-slate-500">{u.email}</div>
                   </td>
                   <td className="px-4 py-3 font-semibold text-[#0B1F3A]">{u.role}</td>
-                  <td className="px-4 py-3 text-xs">{u.twoFactorEnabled ? 'เปิดใช้งาน' : 'ปิด'}</td>
                   <td className="px-4 py-3 text-xs font-semibold">
                     <span className={u.active ? 'text-emerald-700' : 'text-red-700'}>
                       {u.active ? 'ใช้งานได้' : 'ระงับสิทธิ์'}
@@ -397,35 +351,15 @@ export const AdminUsersView: React.FC<{
             />
           </div>
 
-          <div className="space-y-2 text-sm">
-            <div className="flex flex-wrap items-center gap-6">
-              <label className="inline-flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.twoFactorEnabled}
-                  onChange={(e) => setForm({ ...form, twoFactorEnabled: e.target.checked })}
-                />
-                <span>เปิดใช้งานยืนยันตัวตน 2 ขั้นตอน (2FA TOTP)</span>
-              </label>
-              <label className="inline-flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.active}
-                  onChange={(e) => setForm({ ...form, active: e.target.checked })}
-                />
-                <span>เปิดใช้งานบัญชี</span>
-              </label>
-            </div>
-            {editing && form.twoFactorEnabled && (
-              <label className="inline-flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.regenerate2FA}
-                  onChange={(e) => setForm({ ...form, regenerate2FA: e.target.checked })}
-                />
-                <span>สร้าง Secret Key 2FA ใหม่ (สำหรับตั้งค่าในแอป Authenticator ใหม่)</span>
-              </label>
-            )}
+          <div className="flex flex-wrap items-center gap-6 text-sm">
+            <label className="inline-flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.active}
+                onChange={(e) => setForm({ ...form, active: e.target.checked })}
+              />
+              <span>เปิดใช้งานบัญชี</span>
+            </label>
           </div>
 
           <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">

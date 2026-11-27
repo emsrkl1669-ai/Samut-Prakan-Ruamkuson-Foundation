@@ -144,79 +144,6 @@ function timingSafeStringEqual(aStr: string, bStr: string): boolean {
   return crypto.timingSafeEqual(aHash, bHash);
 }
 
-const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-
-function generateBase32Secret(byteLen = 20): string {
-  const bytes = crypto.randomBytes(byteLen);
-  let bits = 0;
-  let value = 0;
-  let output = '';
-  for (const byte of bytes) {
-    value = (value << 8) | byte;
-    bits += 8;
-    while (bits >= 5) {
-      output += BASE32_ALPHABET[(value >>> (bits - 5)) & 31];
-      bits -= 5;
-    }
-  }
-  if (bits > 0) {
-    output += BASE32_ALPHABET[(value << (5 - bits)) & 31];
-  }
-  return output;
-}
-
-function decodeBase32(secret: string): Buffer {
-  const clean = secret.toUpperCase().replace(/[^A-Z2-7]/g, '');
-  let bits = 0;
-  let value = 0;
-  const out: number[] = [];
-  for (const ch of clean) {
-    const idx = BASE32_ALPHABET.indexOf(ch);
-    if (idx === -1) continue;
-    value = (value << 5) | idx;
-    bits += 5;
-    if (bits >= 8) {
-      out.push((value >>> (bits - 8)) & 255);
-      bits -= 8;
-    }
-  }
-  return Buffer.from(out);
-}
-
-function computeTotpAt(secret: string, counter: number): string {
-  const key = decodeBase32(secret);
-  const buf = Buffer.alloc(8);
-  buf.writeBigUInt64BE(BigInt(counter));
-  const hmac = crypto.createHmac('sha1', key).update(buf).digest();
-  const offset = hmac[hmac.length - 1] & 0x0f;
-  const code =
-    ((hmac[offset] & 0x7f) << 24) |
-    ((hmac[offset + 1] & 0xff) << 16) |
-    ((hmac[offset + 2] & 0xff) << 8) |
-    (hmac[offset + 3] & 0xff);
-  return String(code % 1_000_000).padStart(6, '0');
-}
-
-function verifyTotpCode(secret: string | undefined, inputCode: string): boolean {
-  if (!secret) return false;
-  const cleaned = inputCode.replace(/\s+/g, '');
-  if (!/^\d{6}$/.test(cleaned)) return false;
-  const step = Math.floor(Date.now() / 1000 / 30);
-  for (let delta = -1; delta <= 1; delta++) {
-    const expected = computeTotpAt(secret, step + delta);
-    if (timingSafeStringEqual(cleaned, expected)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function buildOtpAuthUri(username: string, secret: string): string {
-  const issuer = encodeURIComponent('RuamkusolSamutprakan');
-  const account = encodeURIComponent(username);
-  return `otpauth://totp/${issuer}:${account}?secret=${secret}&issuer=${issuer}&algorithm=SHA1&digits=6&period=30`;
-}
-
 const VALID_ROLES = new Set<AdminRole>([
   'Super Admin',
   'Admin',
@@ -372,7 +299,6 @@ async function startServer(): Promise<void> {
       fullName,
       email,
       role: 'Super Admin' as AdminRole,
-      twoFactorEnabled: false,
       active: true,
       createdAt: new Date().toISOString(),
       passwordHash: hash,
@@ -405,7 +331,6 @@ async function startServer(): Promise<void> {
     const db = loadDb();
     const identifier = sanitizeString(req.body.username, 120);
     const password = typeof req.body.password === 'string' ? req.body.password : '';
-    const totpCode = sanitizeString(req.body.totpCode, 12);
 
     const envPasscode = (process.env.ADMIN_PASSCODE || '').trim();
 
@@ -448,23 +373,6 @@ async function startServer(): Promise<void> {
     if (!user || !verifyPassword(password, user.passwordHash, user.passwordSalt)) {
       res.status(401).json({ error: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' });
       return;
-    }
-
-    if (user.twoFactorEnabled) {
-      if (!totpCode) {
-        res.status(400).json({
-          requireTwoFactor: true,
-          error: 'กรุณากรอกรหัสยืนยันตัวตน 2 ขั้นตอน (รหัส TOTP 6 หลัก)',
-        });
-        return;
-      }
-      if (!verifyTotpCode(user.twoFactorSecret, totpCode)) {
-        res.status(401).json({
-          requireTwoFactor: true,
-          error: 'รหัสยืนยันตัวตน 2 ขั้นตอนไม่ถูกต้องหรือหมดอายุ',
-        });
-        return;
-      }
     }
 
     const token = signToken({
@@ -1334,7 +1242,6 @@ async function startServer(): Promise<void> {
     const password = typeof b.password === 'string' ? b.password : '';
     const requestedRole = b.role as AdminRole;
     const role: AdminRole = VALID_ROLES.has(requestedRole) ? requestedRole : 'Admin';
-    const twoFactorEnabled = Boolean(b.twoFactorEnabled);
 
     if (!username || !fullName || password.length < 8) {
       res.status(400).json({ error: 'กรุณาระบุชื่อผู้ใช้ ชื่อ-สกุล และรหัสผ่านอย่างน้อย 8 ตัวอักษร' });
@@ -1347,34 +1254,23 @@ async function startServer(): Promise<void> {
     }
 
     const { hash, salt } = hashPassword(password);
-    const twoFactorSecret = twoFactorEnabled ? generateBase32Secret() : undefined;
     const created = {
       id: `admin-${crypto.randomUUID()}`,
       username,
       fullName,
       email,
       role,
-      twoFactorEnabled,
       active: b.active !== false,
       createdAt: new Date().toISOString(),
       passwordHash: hash,
       passwordSalt: salt,
-      twoFactorSecret,
     };
     db.adminUsers.push(created);
     addAuditLog(db, req.adminUser!.fullName, req.adminUser!.role, 'เพิ่มบัญชีผู้ดูแลระบบ', `${username} (${role})`);
     saveDb(db);
     broadcastSync('adminUsers');
-    const { passwordHash: _h, passwordSalt: _s, twoFactorSecret: _t, ...pub } = created;
-    res.status(201).json({
-      ...pub,
-      ...(twoFactorSecret
-        ? {
-            twoFactorSetupSecret: twoFactorSecret,
-            twoFactorUri: buildOtpAuthUri(username, twoFactorSecret),
-          }
-        : {}),
-    });
+    const { passwordHash: _h, passwordSalt: _s, ...pub } = created;
+    res.status(201).json(pub);
   });
 
   app.put('/api/admin/users/:id', requireAuth, requireRole(['Super Admin']), (req: AuthedRequest, res) => {
@@ -1404,17 +1300,6 @@ async function startServer(): Promise<void> {
     current.role = nextRole;
     current.active = nextActive;
 
-    let returnedSecret: string | undefined;
-    if (typeof b.twoFactorEnabled === 'boolean') {
-      current.twoFactorEnabled = b.twoFactorEnabled;
-      if (b.twoFactorEnabled && (!current.twoFactorSecret || b.regenerate2FA)) {
-        current.twoFactorSecret = generateBase32Secret();
-        returnedSecret = current.twoFactorSecret;
-      } else if (!b.twoFactorEnabled) {
-        current.twoFactorSecret = undefined;
-      }
-    }
-
     if (typeof b.password === 'string' && b.password.length >= 8) {
       const { hash, salt } = hashPassword(b.password);
       current.passwordHash = hash;
@@ -1423,16 +1308,14 @@ async function startServer(): Promise<void> {
     addAuditLog(db, req.adminUser!.fullName, req.adminUser!.role, 'แก้ไขบัญชีผู้ดูแลระบบ', current.username);
     saveDb(db);
     broadcastSync('adminUsers');
-    const { passwordHash: _h, passwordSalt: _s, twoFactorSecret: _t, ...pub } = current;
-    res.json({
-      ...pub,
-      ...(returnedSecret
-        ? {
-            twoFactorSetupSecret: returnedSecret,
-            twoFactorUri: buildOtpAuthUri(current.username, returnedSecret),
-          }
-        : {}),
-    });
+    const {
+      passwordHash: _h,
+      passwordSalt: _s,
+      twoFactorSecret: _t,
+      twoFactorEnabled: _e,
+      ...pub
+    } = current as typeof current & { twoFactorSecret?: string; twoFactorEnabled?: boolean };
+    res.json(pub);
   });
 
   app.delete('/api/admin/users/:id', requireAuth, requireRole(['Super Admin']), (req: AuthedRequest, res) => {

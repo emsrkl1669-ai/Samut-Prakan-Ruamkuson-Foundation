@@ -22,7 +22,7 @@ import {
   Radio,
 } from 'lucide-react';
 import type { AdminAppState, AdminRole, AdminSectionId } from '../types';
-import { ApiError, apiRequest, setAuthToken, type AuthStatusResponse } from '../lib/api';
+import { apiRequest, setAuthToken, type AuthStatusResponse } from '../lib/api';
 import {
   AdminDashboardView,
   AdminSettingsView,
@@ -93,8 +93,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [totpCode, setTotpCode] = useState('');
-  const [needs2FA, setNeeds2FA] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
   const [recoveryPasscode, setRecoveryPasscode] = useState('');
   const [authError, setAuthError] = useState('');
@@ -130,17 +128,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     try {
       const res = await apiRequest<{ token: string }>('/api/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ username, password, totpCode }),
+        body: JSON.stringify({ username, password }),
       });
       setAuthToken(res.token);
-      setNeeds2FA(false);
-      setTotpCode('');
       setPassword('');
       await onAuthSuccess();
     } catch (err) {
-      if (err instanceof ApiError && err.requireTwoFactor) {
-        setNeeds2FA(true);
-      }
       setAuthError((err as Error).message);
     } finally {
       setAuthLoading(false);
@@ -346,20 +339,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                   className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm"
                 />
               </div>
-              {needs2FA && (
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    รหัสยืนยันตัวตน 2 ขั้นตอน (2FA)
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={totpCode}
-                    onChange={(e) => setTotpCode(e.target.value)}
-                    className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm font-mono"
-                  />
-                </div>
-              )}
               <button
                 type="submit"
                 disabled={authLoading}

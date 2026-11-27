@@ -22,8 +22,8 @@ export const DEFAULT_SETTINGS: SiteSettings = {
   linePhone: '084-150-9101',
   email: 'emsrkl1669@gmail.com',
   address: '57/1 ซ.ท้ายบ้าน 17 ต.ปากน้ำ อ.เมืองสมุทรปราการ จ.สมุทรปราการ 10270',
-  facebookUrl: 'https://www.facebook.com/search/top?q=%E0%B8%A1%E0%B8%B9%E0%B8%A5%E0%B8%99%E0%B8%B4%E0%B8%98%E0%B8%B4%E0%B8%A3%E0%B9%88%E0%B8%A7%E0%B8%A1%E0%B8%81%E0%B8%B8%E0%B8%A8%E0%B8%A5%20%E0%B8%AA%E0%B8%A1%E0%B8%B8%E0%B8%97%E0%B8%A3%E0%B8%9B%E0%B8%A3%E0%B8%B2%E0%B8%81%E0%B8%B2%E0%B8%A3',
-  lineUrl: 'https://line.me/ti/p/~0841509101',
+  facebookUrl: 'https://www.facebook.com/profile.php?id=100068860846239&locale=th_TH',
+  lineUrl: 'https://line.me/ti/p/_c56XbEAYI',
   websiteUrl: '',
   mapsUrl:
     'https://www.google.com/maps/place/%E0%B8%A8%E0%B8%B9%E0%B8%99%E0%B8%A2%E0%B9%8C%E0%B8%A7%E0%B8%B4%E0%B8%97%E0%B8%A2%E0%B8%B8%E0%B8%9A%E0%B8%B1%E0%B8%A7%E0%B8%AB%E0%B8%A5%E0%B8%A7%E0%B8%87+%E0%B8%81%E0%B8%B9%E0%B9%89%E0%B8%8A%E0%B8%B5%E0%B8%9E%E0%B8%81%E0%B8%B9%E0%B9%89%E0%B8%A0%E0%B8%B1%E0%B8%A2/@13.5781113,100.5940477,21z/data=!4m6!3m5!1s0x30e2a75482e1eb15:0xd1f517001775ccae!8m2!3d13.5780814!4d100.5940229!16s%2Fg%2F11t2qccz2k',

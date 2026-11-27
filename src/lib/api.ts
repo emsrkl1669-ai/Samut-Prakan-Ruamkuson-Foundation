@@ -34,11 +34,9 @@ export interface AuthStatusResponse {
 
 export class ApiError extends Error {
   status: number;
-  requireTwoFactor?: boolean;
-  constructor(message: string, status: number, requireTwoFactor?: boolean) {
+  constructor(message: string, status: number) {
     super(message);
     this.status = status;
-    this.requireTwoFactor = requireTwoFactor;
   }
 }
 
@@ -61,11 +59,9 @@ export async function apiRequest<T>(
 
   if (!res.ok) {
     let msg = `เกิดข้อผิดพลาด (${res.status})`;
-    let requireTwoFactor = false;
     try {
       const data = await res.json();
       if (data?.error) msg = data.error;
-      if (data?.requireTwoFactor) requireTwoFactor = true;
     } catch {
       // ignore json parse failure
     }
@@ -73,7 +69,7 @@ export async function apiRequest<T>(
       authToken = null;
       onUnauthorized?.();
     }
-    throw new ApiError(msg, res.status, requireTwoFactor);
+    throw new ApiError(msg, res.status);
   }
 
   return res.json() as Promise<T>;
